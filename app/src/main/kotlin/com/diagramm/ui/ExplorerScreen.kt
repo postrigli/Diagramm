@@ -118,7 +118,8 @@ fun ExplorerScreen(
         Breadcrumbs(current.pathFromRoot(), onClick = { vm.navigateTo(it) })
 
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            val landscape = maxWidth > maxHeight
+            val boxHeight = maxHeight
+            val landscape = maxWidth > boxHeight
             val chart: @Composable (Modifier) -> Unit = { m ->
                 SunburstChart(
                     sunburst = data?.sunburst,
@@ -174,7 +175,7 @@ fun ExplorerScreen(
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
-                    chart(Modifier.fillMaxWidth().height(maxHeight * 0.42f))
+                    chart(Modifier.fillMaxWidth().height(boxHeight * 0.42f))
                     details(Modifier.weight(1f).fillMaxWidth())
                 }
             }
