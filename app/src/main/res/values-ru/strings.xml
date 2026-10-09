@@ -105,4 +105,27 @@
     <string name="usage_text">Чтобы измерить размер приложений, Android требует для Diagramm разрешение \"Доступ к данным об использовании\". Данные не покидают устройство.</string>
     <string name="apps_uninstall_title">Удалить приложений: %1$d?</string>
     <string name="apps_uninstall_text">Android попросит подтвердить удаление каждого приложения. Освободится до %1$s (приложения и их данные).</string>
+
+    <!-- Settings & app removal mode -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_removal_title">Удаление приложений</string>
+    <string name="removal_system_title">Без root</string>
+    <string name="removal_system_desc">Android спросит подтверждение для каждого приложения отдельным окном.</string>
+    <string name="removal_choice_title">Как Diagramm будет удалять приложения?</string>
+    <string name="removal_choice_text">Это можно поменять позже: значок шестерёнки на главном экране.</string>
+
+    <string name="removal_shizuku_title">С Shizuku</string>
+    <string name="removal_shizuku_desc">Все выбранные приложения удаляются сразу, без окон подтверждения. Нужно бесплатное приложение Shizuku (работает с root и без него): его запускают один раз и разрешают Diagramm им пользоваться.</string>
+    <string name="shizuku_ready">Shizuku готов к работе.</string>
+    <string name="shizuku_needs_permission">Shizuku запущен. Разрешите Diagramm им пользоваться.</string>
+    <string name="shizuku_not_running">Shizuku установлен, но не запущен. Откройте его и запустите службу (после перезагрузки телефона её нужно запускать заново).</string>
+    <string name="shizuku_not_installed">Shizuku не установлен.</string>
+    <string name="shizuku_unsupported">Версия Shizuku слишком старая. Обновите его.</string>
+    <string name="shizuku_unknown">Состояние Shizuku неизвестно.</string>
+    <string name="shizuku_action_grant">Разрешить доступ</string>
+    <string name="shizuku_action_open">Открыть Shizuku</string>
+    <string name="shizuku_action_download">Скачать Shizuku</string>
+    <string name="shizuku_action_refresh">Проверить снова</string>
+    <string name="apps_uninstall_text_shizuku">Приложения будут удалены сразу, без подтверждения, через Shizuku. Освободится до %1$s (приложения и их данные).</string>
+    <string name="msg_shizuku_fallback">Shizuku не готов, поэтому используются окна подтверждения Android. Настройте его через значок шестерёнки.</string>
 </resources>

@@ -3,15 +3,20 @@ package com.diagramm
 import android.content.Context
 import com.diagramm.auth.GoogleAuth
 import com.diagramm.auth.YandexAuth
+import com.diagramm.data.AppSettings
 import com.diagramm.data.InstalledAppsProvider
 import com.diagramm.data.LocalVolume
 import com.diagramm.data.LocalVolumes
+import com.diagramm.data.ProcessCommandRunner
 import com.diagramm.data.SecureStore
+import com.diagramm.data.ShizukuAccess
+import com.diagramm.data.ShizukuShell
 import com.diagramm.gdrive.GoogleDriveProvider
 import com.diagramm.net.AccessTokenProvider
 import com.diagramm.net.AuthorizedHttp
 import com.diagramm.storage.LocalStorageProvider
 import com.diagramm.storage.LocalTrash
+import com.diagramm.storage.PrivilegedPackageRemover
 import com.diagramm.storage.StorageProvider
 import com.diagramm.yandex.YandexDiskProvider
 import okhttp3.OkHttpClient
@@ -21,6 +26,9 @@ import java.util.concurrent.TimeUnit
 /** Hand-rolled dependency container: the app is small enough that a DI framework would only add noise. */
 class AppContainer(private val context: Context) {
     val secureStore = SecureStore(context)
+    val settings = AppSettings(context)
+    val shizuku = ShizukuAccess(context)
+    val privilegedRemover = PrivilegedPackageRemover(ProcessCommandRunner(start = ShizukuShell::start))
     val googleAuth = GoogleAuth(context, secureStore)
     val yandexAuth = YandexAuth(secureStore)
 

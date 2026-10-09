@@ -105,4 +105,27 @@
     <string name="usage_text">To measure app sizes Android requires the \"Usage access\" permission for Diagramm. Nothing leaves your device.</string>
     <string name="apps_uninstall_title">Uninstall %1$d apps?</string>
     <string name="apps_uninstall_text">Android will ask you to confirm each one. Up to %1$s will be freed (apps and their data).</string>
+
+    <!-- Settings & app removal mode -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_removal_title">Removing apps</string>
+    <string name="removal_system_title">Without root</string>
+    <string name="removal_system_desc">Android asks you to confirm each app in its own window.</string>
+    <string name="removal_choice_title">How should Diagramm remove apps?</string>
+    <string name="removal_choice_text">You can change this later with the gear icon on the main screen.</string>
+
+    <string name="removal_shizuku_title">With Shizuku</string>
+    <string name="removal_shizuku_desc">All selected apps are removed in one go, no confirmation windows. Needs the free Shizuku app (works with or without root); you start it once and allow Diagramm to use it.</string>
+    <string name="shizuku_ready">Shizuku is ready.</string>
+    <string name="shizuku_needs_permission">Shizuku is running. Allow Diagramm to use it.</string>
+    <string name="shizuku_not_running">Shizuku is installed but not running. Open it and start the service (it must be started again after a reboot).</string>
+    <string name="shizuku_not_installed">Shizuku is not installed.</string>
+    <string name="shizuku_unsupported">This Shizuku version is too old. Please update it.</string>
+    <string name="shizuku_unknown">Shizuku status is unknown.</string>
+    <string name="shizuku_action_grant">Allow access</string>
+    <string name="shizuku_action_open">Open Shizuku</string>
+    <string name="shizuku_action_download">Get Shizuku</string>
+    <string name="shizuku_action_refresh">Check again</string>
+    <string name="apps_uninstall_text_shizuku">The apps will be removed right away, without confirmation, through Shizuku. Up to %1$s will be freed (apps and their data).</string>
+    <string name="msg_shizuku_fallback">Shizuku is not ready, so Android\'s own confirmation windows are used. Set it up under the gear icon.</string>
 </resources>

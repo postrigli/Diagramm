@@ -1,5 +1,7 @@
 package com.diagramm.ui
 
+import com.diagramm.data.AppRemovalMode
+import com.diagramm.data.ShizukuStatus
 import com.diagramm.model.Collector
 import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
@@ -21,7 +23,7 @@ data class SourceItem(
     val configured: Boolean = true,
 )
 
-enum class Screen { HOME, SCANNING, EXPLORER, TRASH }
+enum class Screen { HOME, SCANNING, EXPLORER, TRASH, SETTINGS }
 
 data class ScanUi(
     val source: SourceItem,
@@ -43,6 +45,13 @@ data class ExplorerState(
     val category: FileCategory? = null,
 )
 
+data class SettingsUi(
+    val removalMode: AppRemovalMode = AppRemovalMode.SYSTEM_DIALOGS,
+    /** False until the user picked a mode: the first-run question is shown. */
+    val removalChosen: Boolean = false,
+    val shizuku: ShizukuStatus = ShizukuStatus.UNKNOWN,
+)
+
 data class TrashUi(val source: SourceItem, val entries: List<TrashEntry>)
 
 data class AppState(
@@ -51,6 +60,7 @@ data class AppState(
     val scan: ScanUi? = null,
     val explorer: ExplorerState? = null,
     val trash: TrashUi? = null,
+    val settings: SettingsUi = SettingsUi(),
     val deleting: Boolean = false,
 )
 
@@ -62,4 +72,6 @@ sealed interface UiMessage {
     data class DeleteFailed(val count: Int, val reason: String?) : UiMessage
     data class RestoreFailed(val reason: String?) : UiMessage
     data class ConnectFailed(val reason: String?) : UiMessage
+    /** Shizuku mode is on but Shizuku is not ready: the system uninstaller was used instead. */
+    data object ShizukuFallback : UiMessage
 }

@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.diagramm.AppContainer
+import com.diagramm.data.AppRemovalMode
+import com.diagramm.data.ShizukuStatus
 import com.diagramm.DiagrammApp
 import com.diagramm.model.Collector
 import com.diagramm.model.FileCategory
@@ -37,7 +39,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainViewModel(private val container: AppContainer) : ViewModel() {
-    private val _state = MutableStateFlow(AppState())
+    private val _state = MutableStateFlow(
+        AppState(settings = SettingsUi(container.settings.removalMode, container.settings.removalModeChosen)),
+    )
     val state: StateFlow<AppState> = _state.asStateFlow()
 
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 8)
@@ -52,6 +56,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
 
     init {
         refreshSources()
+        refreshShizuku()
     }
 
     // ---- sources -------------------------------------------------------------------------------
@@ -199,6 +204,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 if (ex != null && parent != null) navigateTo(parent) else toHome()
             }
             Screen.TRASH -> toHome()
+            Screen.SETTINGS -> _state.update { it.copy(screen = Screen.HOME) }
         }
         return true
     }
@@ -233,8 +239,13 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         val items = ex.collector.items
         if (items.isEmpty() || _state.value.deleting) return
         if (ex.source.type == SourceType.APPS) {
-            // Apps cannot be removed silently: the system shows its own confirmation for each one.
-            _uninstallRequests.tryEmit(items.mapNotNull { AppsTree.packageOf(it.id) })
+            val packages = items.mapNotNull { AppsTree.packageOf(it.id) }
+            if (_state.value.settings.removalMode == AppRemovalMode.SHIZUKU) {
+                removeAppsWithShizuku(items, packages)
+            } else {
+                // system uninstaller: Android asks for confirmation of each app
+                _uninstallRequests.tryEmit(packages)
+            }
             return
         }
         viewModelScope.launch {
@@ -276,7 +287,32 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         return withChildren(children - free + Node.freeSpace(free.size + bytes))
     }
 
-    /** Called after the system uninstaller really removed these packages. */
+    private fun removeAppsWithShizuku(items: List<Node>, packages: List<String>) {
+        val status = container.shizuku.status()
+        _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
+        if (status != ShizukuStatus.READY) {
+            // not usable right now: fall back to the system dialogs instead of leaving the user stuck
+            _messages.tryEmit(UiMessage.ShizukuFallback)
+            _uninstallRequests.tryEmit(packages)
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(deleting = true) }
+            try {
+                val result = container.privilegedRemover.remove(packages)
+                onAppsRemoved(result.removed)
+                val freed = items.filter { AppsTree.packageOf(it.id) in result.removed }.sumOf { it.size }
+                if (result.removed.isNotEmpty()) _messages.tryEmit(UiMessage.Deleted(freed))
+                if (result.failures.isNotEmpty()) {
+                    _messages.tryEmit(UiMessage.DeleteFailed(result.failures.size, result.failures.values.firstOrNull()))
+                }
+            } finally {
+                _state.update { it.copy(deleting = false) }
+            }
+        }
+    }
+
+    /** Called after the system uninstaller (or Shizuku) really removed these packages. */
     fun onAppsRemoved(packages: Collection<String>) {
         val ids = packages.mapTo(HashSet()) { AppsTree.appId(it) }
         updateExplorer { ex ->
@@ -285,6 +321,25 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
             val newCurrent = newRoot.findById(ex.current.id) ?: newRoot
             ex.copy(root = newRoot, current = newCurrent, collector = ex.collector.minusIds(ids), focus = null)
         }
+    }
+
+    // ---- settings ------------------------------------------------------------------------------
+
+    fun openSettings() {
+        refreshShizuku()
+        _state.update { it.copy(screen = Screen.SETTINGS) }
+    }
+
+    fun setRemovalMode(mode: AppRemovalMode) {
+        container.settings.removalMode = mode
+        _state.update { it.copy(settings = it.settings.copy(removalMode = mode, removalChosen = true)) }
+        if (mode == AppRemovalMode.SHIZUKU) refreshShizuku()
+    }
+
+    /** Re-reads what Shizuku can do right now (also called when its binder or our permission changes). */
+    fun refreshShizuku() {
+        val status = container.shizuku.status()
+        _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
     }
 
     // ---- local trash ---------------------------------------------------------------------------

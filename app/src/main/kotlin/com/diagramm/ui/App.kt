@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,7 +54,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.diagramm.DiagrammApp
 import com.diagramm.R
+import com.diagramm.data.AppRemovalMode
+import com.diagramm.data.ShizukuStatus
 import com.diagramm.data.StorageAccess
 import com.diagramm.data.UsageAccess
 import com.diagramm.model.Collector
@@ -69,6 +73,7 @@ fun DiagrammApp(
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val fmt = rememberSizeFormatter()
+    val shizuku = remember { (context.applicationContext as DiagrammApp).container.shizuku }
 
     // ---- one-off messages ----
     val currentFmt by rememberUpdatedState(fmt)
@@ -110,6 +115,7 @@ fun DiagrammApp(
                 Screen.SCANNING -> state.scan?.let { sourceTitle(it.source) }.orEmpty()
                 Screen.EXPLORER -> state.explorer?.let { sourceTitle(it.source) }.orEmpty()
                 Screen.TRASH -> stringResource(R.string.trash_title)
+                Screen.SETTINGS -> stringResource(R.string.settings_title)
             }
             TopAppBar(
                 title = { Text(title) },
@@ -123,6 +129,9 @@ fun DiagrammApp(
                 },
                 actions = {
                     when (state.screen) {
+                        Screen.HOME -> IconButton(onClick = { vm.openSettings() }) {
+                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings_title))
+                        }
                         Screen.EXPLORER -> {
                             IconButton(onClick = { vm.rescan() }) {
                                 Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.rescan))
@@ -160,6 +169,19 @@ fun DiagrammApp(
             Screen.TRASH -> state.trash?.let {
                 TrashScreen(it.entries, onRestore = vm::restore, onPurge = vm::purge, modifier = content)
             }
+            Screen.SETTINGS -> SettingsScreen(
+                settings = state.settings,
+                onMode = vm::setRemovalMode,
+                onShizukuAction = {
+                    when (state.settings.shizuku) {
+                        ShizukuStatus.NEEDS_PERMISSION -> shizuku.requestPermission()
+                        ShizukuStatus.NOT_RUNNING -> shizuku.openShizukuApp()
+                        ShizukuStatus.NOT_INSTALLED, ShizukuStatus.UNSUPPORTED -> shizuku.openDownloadPage()
+                        else -> vm.refreshShizuku()
+                    }
+                },
+                modifier = content,
+            )
         }
     }
 
@@ -196,12 +218,49 @@ fun DiagrammApp(
         )
     }
 
+    // First launch: ask how apps should be removed (changeable later with the gear on the main screen).
+    if (state.screen == Screen.HOME && !state.settings.removalChosen) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.removal_choice_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.removal_choice_text), style = MaterialTheme.typography.bodyMedium)
+                    RemovalModeOption(
+                        selected = false,
+                        title = stringResource(R.string.removal_system_title),
+                        description = stringResource(R.string.removal_system_desc),
+                        onSelect = { vm.setRemovalMode(AppRemovalMode.SYSTEM_DIALOGS) },
+                    )
+                    RemovalModeOption(
+                        selected = false,
+                        title = stringResource(R.string.removal_shizuku_title),
+                        description = stringResource(R.string.removal_shizuku_desc),
+                        onSelect = {
+                            vm.setRemovalMode(AppRemovalMode.SHIZUKU)
+                            vm.openSettings() // show the remaining Shizuku steps right away
+                        },
+                    )
+                }
+            },
+            confirmButton = {},
+        )
+    }
+
     val explorer = state.explorer
     if (showDeleteDialog && explorer != null && !explorer.collector.isEmpty && explorer.source.type == SourceType.APPS) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text(stringResource(R.string.apps_uninstall_title, explorer.collector.items.size)) },
-            text = { Text(stringResource(R.string.apps_uninstall_text, fmt(explorer.collector.totalSize))) },
+            text = {
+                Text(
+                    stringResource(
+                        if (state.settings.removalMode == AppRemovalMode.SHIZUKU) R.string.apps_uninstall_text_shizuku
+                        else R.string.apps_uninstall_text,
+                        fmt(explorer.collector.totalSize),
+                    ),
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteDialog = false
@@ -288,6 +347,7 @@ private fun messageText(context: Context, msg: UiMessage, fmt: (Long) -> String)
         is UiMessage.DeleteFailed -> context.getString(R.string.msg_delete_partial, msg.count, msg.reason ?: unknown)
         is UiMessage.RestoreFailed -> context.getString(R.string.msg_restore_failed, msg.reason ?: unknown)
         is UiMessage.ConnectFailed -> context.getString(R.string.msg_connect_failed, msg.reason ?: unknown)
+        UiMessage.ShizukuFallback -> context.getString(R.string.msg_shizuku_fallback)
     }
 }
 

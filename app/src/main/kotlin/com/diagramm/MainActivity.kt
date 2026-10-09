@@ -19,6 +19,7 @@ import com.diagramm.ui.SourceType
 import com.diagramm.ui.UiMessage
 import com.diagramm.ui.theme.DiagrammTheme
 import kotlinx.coroutines.launch
+import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels { MainViewModel.Factory }
@@ -44,9 +45,17 @@ class MainActivity : ComponentActivity() {
         launchNextUninstall()
     }
 
+    // Shizuku can start, stop or change our permission at any time: keep the settings status current.
+    private val shizukuBinderReceived = Shizuku.OnBinderReceivedListener { vm.refreshShizuku() }
+    private val shizukuBinderDead = Shizuku.OnBinderDeadListener { vm.refreshShizuku() }
+    private val shizukuPermission = Shizuku.OnRequestPermissionResultListener { _, _ -> vm.refreshShizuku() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        Shizuku.addBinderReceivedListenerSticky(shizukuBinderReceived)
+        Shizuku.addBinderDeadListener(shizukuBinderDead)
+        Shizuku.addRequestPermissionResultListener(shizukuPermission)
         lifecycleScope.launch { vm.uninstallRequests.collect { startUninstall(it) } }
         handleRedirect(intent)
         setContent {
@@ -54,6 +63,18 @@ class MainActivity : ComponentActivity() {
                 DiagrammApp(vm = vm, onConnect = ::connect)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        vm.refreshShizuku() // e.g. back from the Shizuku app after starting it
+    }
+
+    override fun onDestroy() {
+        Shizuku.removeBinderReceivedListener(shizukuBinderReceived)
+        Shizuku.removeBinderDeadListener(shizukuBinderDead)
+        Shizuku.removeRequestPermissionResultListener(shizukuPermission)
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
