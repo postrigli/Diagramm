@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Diagramm</string>
+
+    <string-array name="size_units">
+        <item>B</item>
+        <item>KB</item>
+        <item>MB</item>
+        <item>GB</item>
+        <item>TB</item>
+        <item>PB</item>
+    </string-array>
+
+    <!-- Home -->
+    <string name="home_title">Where is my space?</string>
+    <string name="home_subtitle">Pick a place to scan</string>
+    <string name="source_internal">Internal storage</string>
+    <string name="source_removable">Removable storage</string>
+    <string name="source_gdrive">Google Drive</string>
+    <string name="source_yandex">Yandex Disk</string>
+    <string name="used_of">%1$s of %2$s used</string>
+    <string name="used_only">%1$s used</string>
+    <string name="not_connected">Not connected</string>
+    <string name="yandex_not_configured">Not configured: set YANDEX_CLIENT_ID (see README)</string>
+    <string name="action_scan">Scan</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="trash_summary">Diagramm trash: %1$s</string>
+    <string name="action_open">Open</string>
+
+    <!-- Permission -->
+    <string name="perm_title">Access to all files</string>
+    <string name="perm_text">To measure your storage Diagramm needs the \"All files access\" permission. Nothing leaves your device.</string>
+    <string name="perm_grant">Grant</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Scanning -->
+    <string name="scanning_title">Scanning %1$s…</string>
+    <string name="scanning_stats">%1$d files · %2$s</string>
+
+    <!-- Explorer -->
+    <string name="back">Back</string>
+    <string name="rescan">Rescan</string>
+    <string name="duplicates">Duplicates</string>
+    <string name="free_space">Free space</string>
+    <string name="hidden_space">Other data (system, hidden)</string>
+    <string name="smaller_objects">Smaller objects</string>
+    <string name="files_count">%1$d files</string>
+    <string name="access_denied">No access</string>
+    <string name="collected">collected</string>
+    <string name="delete">Delete</string>
+    <string name="clear">Clear</string>
+    <string name="add_to_collector">Add to collector</string>
+    <string name="remove_from_collector">Remove from collector</string>
+    <string name="share_of_parent">%1$s of folder</string>
+    <string name="empty_folder">Nothing here</string>
+
+    <!-- Categories -->
+    <string name="cat_all">All</string>
+    <string name="cat_images">Images</string>
+    <string name="cat_video">Video</string>
+    <string name="cat_audio">Audio</string>
+    <string name="cat_documents">Documents</string>
+    <string name="cat_archives">Archives</string>
+    <string name="cat_apps">Apps</string>
+    <string name="cat_other">Other</string>
+    <string name="cat_folders">Folders</string>
+
+    <!-- Delete dialog -->
+    <string name="delete_title">Delete %1$d items?</string>
+    <string name="delete_total">%1$s will be removed.</string>
+    <string name="delete_opt_trash_local">Move to Diagramm trash (can be restored, space is freed when the trash is emptied)</string>
+    <string name="delete_opt_trash_cloud">Move to the cloud trash</string>
+    <string name="delete_opt_permanent">Delete permanently (cannot be undone)</string>
+    <string name="deleting">Deleting…</string>
+
+    <!-- Duplicates -->
+    <string name="duplicates_title">Duplicate files</string>
+    <string name="duplicates_searching">Looking for duplicates…</string>
+    <string name="duplicates_none">No duplicates found</string>
+    <string name="duplicates_group">%1$d copies · %2$s wasted</string>
+    <string name="duplicates_select_extra">Select extra copies</string>
+
+    <!-- Trash -->
+    <string name="trash_title">Diagramm trash</string>
+    <string name="trash_empty">The trash is empty</string>
+    <string name="trash_restore">Restore</string>
+    <string name="trash_delete_forever">Delete forever</string>
+    <string name="trash_empty_all">Empty trash</string>
+
+    <!-- Messages -->
+    <string name="msg_scan_failed">Scan failed: %1$s</string>
+    <string name="msg_sign_in_required">Please connect the account again</string>
+    <string name="msg_deleted">Deleted %1$s</string>
+    <string name="msg_delete_partial">Could not delete %1$d items: %2$s</string>
+    <string name="msg_restore_failed">Could not restore: %1$s</string>
+    <string name="msg_unknown_error">unknown error</string>
+    <string name="msg_cannot_open">No app can open this file</string>
+    <string name="msg_connect_failed">Could not connect: %1$s</string>
+</resources>

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Diagramm</string>
+
+    <string-array name="size_units">
+        <item>Б</item>
+        <item>КБ</item>
+        <item>МБ</item>
+        <item>ГБ</item>
+        <item>ТБ</item>
+        <item>ПБ</item>
+    </string-array>
+
+    <!-- Home -->
+    <string name="home_title">Куда делось место?</string>
+    <string name="home_subtitle">Выберите, что сканировать</string>
+    <string name="source_internal">Внутренняя память</string>
+    <string name="source_removable">Съёмный накопитель</string>
+    <string name="source_gdrive">Google Диск</string>
+    <string name="source_yandex">Яндекс Диск</string>
+    <string name="used_of">Занято %1$s из %2$s</string>
+    <string name="used_only">Занято %1$s</string>
+    <string name="not_connected">Не подключено</string>
+    <string name="yandex_not_configured">Не настроено: задайте YANDEX_CLIENT_ID (см. README)</string>
+    <string name="action_scan">Сканировать</string>
+    <string name="action_connect">Подключить</string>
+    <string name="action_disconnect">Отключить</string>
+    <string name="trash_summary">Корзина Diagramm: %1$s</string>
+    <string name="action_open">Открыть</string>
+
+    <!-- Permission -->
+    <string name="perm_title">Доступ ко всем файлам</string>
+    <string name="perm_text">Чтобы измерить память, Diagramm нужно разрешение «Доступ ко всем файлам». Данные не покидают устройство.</string>
+    <string name="perm_grant">Разрешить</string>
+    <string name="cancel">Отмена</string>
+
+    <!-- Scanning -->
+    <string name="scanning_title">Сканирование: %1$s…</string>
+    <string name="scanning_stats">Файлов: %1$d · %2$s</string>
+
+    <!-- Explorer -->
+    <string name="back">Назад</string>
+    <string name="rescan">Пересканировать</string>
+    <string name="duplicates">Дубликаты</string>
+    <string name="free_space">Свободно</string>
+    <string name="hidden_space">Прочие данные (система, скрытое)</string>
+    <string name="smaller_objects">Мелкие объекты</string>
+    <string name="files_count">Файлов: %1$d</string>
+    <string name="access_denied">Нет доступа</string>
+    <string name="collected">собрано</string>
+    <string name="delete">Удалить</string>
+    <string name="clear">Очистить</string>
+    <string name="add_to_collector">В коллектор</string>
+    <string name="remove_from_collector">Убрать из коллектора</string>
+    <string name="share_of_parent">%1$s папки</string>
+    <string name="empty_folder">Здесь пусто</string>
+
+    <!-- Categories -->
+    <string name="cat_all">Все</string>
+    <string name="cat_images">Фото</string>
+    <string name="cat_video">Видео</string>
+    <string name="cat_audio">Аудио</string>
+    <string name="cat_documents">Документы</string>
+    <string name="cat_archives">Архивы</string>
+    <string name="cat_apps">Приложения</string>
+    <string name="cat_other">Прочее</string>
+    <string name="cat_folders">Папки</string>
+
+    <!-- Delete dialog -->
+    <string name="delete_title">Удалить объектов: %1$d?</string>
+    <string name="delete_total">Будет удалено: %1$s.</string>
+    <string name="delete_opt_trash_local">В корзину Diagramm (можно восстановить; место освободится после очистки корзины)</string>
+    <string name="delete_opt_trash_cloud">В корзину облака</string>
+    <string name="delete_opt_permanent">Удалить навсегда (без возможности восстановления)</string>
+    <string name="deleting">Удаление…</string>
+
+    <!-- Duplicates -->
+    <string name="duplicates_title">Дубликаты файлов</string>
+    <string name="duplicates_searching">Ищем дубликаты…</string>
+    <string name="duplicates_none">Дубликатов не найдено</string>
+    <string name="duplicates_group">Копий: %1$d · лишних %2$s</string>
+    <string name="duplicates_select_extra">Выбрать лишние копии</string>
+
+    <!-- Trash -->
+    <string name="trash_title">Корзина Diagramm</string>
+    <string name="trash_empty">Корзина пуста</string>
+    <string name="trash_restore">Восстановить</string>
+    <string name="trash_delete_forever">Удалить навсегда</string>
+    <string name="trash_empty_all">Очистить корзину</string>
+
+    <!-- Messages -->
+    <string name="msg_scan_failed">Ошибка сканирования: %1$s</string>
+    <string name="msg_sign_in_required">Подключите аккаунт заново</string>
+    <string name="msg_deleted">Удалено: %1$s</string>
+    <string name="msg_delete_partial">Не удалось удалить объектов: %1$d (%2$s)</string>
+    <string name="msg_restore_failed">Не удалось восстановить: %1$s</string>
+    <string name="msg_unknown_error">неизвестная ошибка</string>
+    <string name="msg_cannot_open">Нет приложения для открытия файла</string>
+    <string name="msg_connect_failed">Не удалось подключить: %1$s</string>
+</resources>
