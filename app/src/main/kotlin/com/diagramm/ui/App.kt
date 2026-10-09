@@ -165,21 +165,28 @@ fun DiagrammApp(
                 modifier = content,
             )
             Screen.SCANNING -> state.scan?.let { ScanScreen(it, onCancel = { vm.onBack() }, modifier = content) }
-            Screen.EXPLORER -> state.explorer?.let { ExplorerScreen(it, vm, onDelete = { showDeleteDialog = true }, modifier = content) }
+            Screen.EXPLORER -> state.explorer?.let {
+                ExplorerScreen(
+                    it, vm,
+                    shizukuReady = state.settings.shizuku == ShizukuStatus.READY,
+                    onDelete = { showDeleteDialog = true },
+                    modifier = content,
+                )
+            }
             Screen.TRASH -> state.trash?.let {
                 TrashScreen(it.entries, onRestore = vm::restore, onPurge = vm::purge, modifier = content)
             }
             Screen.SETTINGS -> SettingsScreen(
                 settings = state.settings,
                 onMode = vm::setRemovalMode,
-                onShizukuAction = {
-                    when (state.settings.shizuku) {
-                        ShizukuStatus.NEEDS_PERMISSION -> shizuku.requestPermission()
-                        ShizukuStatus.NOT_RUNNING -> shizuku.openShizukuApp()
-                        ShizukuStatus.NOT_INSTALLED, ShizukuStatus.UNSUPPORTED -> shizuku.openDownloadPage()
-                        else -> vm.refreshShizuku()
-                    }
-                },
+                actions = SetupActions(
+                    requestShizuku = { shizuku.requestPermission() },
+                    openShizuku = { shizuku.openShizukuApp() },
+                    downloadShizuku = { shizuku.openDownloadPage() },
+                    openUsageAccess = { openUsageAccessSettings(context) },
+                    openAppInfo = { openAppSettings(context, context.packageName) },
+                    refresh = { vm.refreshSetup() },
+                ),
                 modifier = content,
             )
         }
@@ -348,6 +355,8 @@ private fun messageText(context: Context, msg: UiMessage, fmt: (Long) -> String)
         is UiMessage.RestoreFailed -> context.getString(R.string.msg_restore_failed, msg.reason ?: unknown)
         is UiMessage.ConnectFailed -> context.getString(R.string.msg_connect_failed, msg.reason ?: unknown)
         UiMessage.ShizukuFallback -> context.getString(R.string.msg_shizuku_fallback)
+        is UiMessage.CacheCleared -> context.getString(R.string.msg_cache_cleared, fmt(msg.bytes))
+        is UiMessage.CacheFailed -> context.getString(R.string.msg_cache_failed, msg.count, msg.reason ?: unknown)
     }
 }
 

@@ -53,10 +53,22 @@ class InstalledAppsProvider(private val context: Context) : StorageProvider {
     override val id: String = "apps"
     override val displayName: String = context.getString(R.string.source_apps)
 
+    val labels: AppsTreeLabels
+        get() = AppsTreeLabels(
+            root = displayName,
+            code = context.getString(R.string.apps_part_code),
+            data = context.getString(R.string.apps_part_data),
+            cache = context.getString(R.string.apps_part_cache),
+            cacheRoot = context.getString(R.string.apps_cache_title),
+        )
+
     override suspend fun quota(): StorageQuota = StorageQuota(totalBytes = null, usedBytes = 0)
 
+    override suspend fun scan(progress: ScanProgress): Node = AppsTree.build(loadUsages(progress), labels)
+
+    /** Reads size, data and cache of every installed app. Needs "Usage access". */
     @Suppress("DEPRECATION")
-    override suspend fun scan(progress: ScanProgress): Node = withContext(Dispatchers.Default) {
+    suspend fun loadUsages(progress: ScanProgress): List<AppUsage> = withContext(Dispatchers.Default) {
         if (!UsageAccess.has(context)) throw UsageAccessRequiredException()
         progress.reset()
         val pm = context.packageManager
@@ -87,15 +99,7 @@ class InstalledAppsProvider(private val context: Context) : StorageProvider {
                 ),
             )
         }
-        AppsTree.build(
-            usages,
-            AppsTreeLabels(
-                root = displayName,
-                code = context.getString(R.string.apps_part_code),
-                data = context.getString(R.string.apps_part_data),
-                cache = context.getString(R.string.apps_part_cache),
-            ),
-        )
+        usages
     }
 
     override suspend fun delete(nodes: List<Node>, mode: DeleteMode): DeleteResult =

@@ -15,6 +15,7 @@ import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
 import com.diagramm.model.NodeKind
 import com.diagramm.net.AuthRequiredException
+import com.diagramm.storage.AppUsage
 import com.diagramm.storage.AppsTree
 import com.diagramm.storage.DeleteMode
 import com.diagramm.storage.DeleteResult
@@ -56,7 +57,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
 
     init {
         refreshSources()
-        refreshShizuku()
+        refreshSetup()
     }
 
     // ---- sources -------------------------------------------------------------------------------
@@ -159,9 +160,18 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }
             try {
-                val tree = withContext(Dispatchers.Default) { providerFor(source).scan(progress) }
+                val (tree, apps) = withContext(Dispatchers.Default) {
+                    if (source.type == SourceType.APPS) {
+                        val provider = container.appsProvider()
+                        val usages = provider.loadUsages(progress)
+                        val labels = provider.labels
+                        AppsTree.build(usages, labels) to AppsExplorer(usages, labels, AppsTree.buildCache(usages, labels))
+                    } else {
+                        providerFor(source).scan(progress) to null
+                    }
+                }
                 _state.update {
-                    it.copy(screen = Screen.EXPLORER, scan = null, explorer = ExplorerState(source, tree, tree))
+                    it.copy(screen = Screen.EXPLORER, scan = null, explorer = ExplorerState(source, tree, tree, apps = apps))
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -217,7 +227,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
 
     fun navigateTo(node: Node) {
         if (!node.isDirectory) return
-        updateExplorer { it.copy(current = node, focus = null, category = null) }
+        updateExplorer {
+            // inside an app we are always on the "Apps" tab
+            val apps = if (node.parent != null) it.apps?.copy(tab = AppsTab.APPS) else it.apps
+            it.copy(current = node, focus = null, category = null, apps = apps)
+        }
     }
 
     fun navigateUp() {
@@ -314,32 +328,98 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Called after the system uninstaller (or Shizuku) really removed these packages. */
     fun onAppsRemoved(packages: Collection<String>) {
-        val ids = packages.mapTo(HashSet()) { AppsTree.appId(it) }
         updateExplorer { ex ->
-            if (ex.source.type != SourceType.APPS) return@updateExplorer ex
-            val newRoot = ex.root.removing(ids)
-            val newCurrent = newRoot.findById(ex.current.id) ?: newRoot
-            ex.copy(root = newRoot, current = newCurrent, collector = ex.collector.minusIds(ids), focus = null)
+            val apps = ex.apps ?: return@updateExplorer ex
+            ex.withUsages(AppsTree.withoutPackages(apps.usages, packages.toSet()))
         }
     }
+
+    // ---- apps: cache tab ------------------------------------------------------------------------
+
+    fun setAppsTab(tab: AppsTab) = updateExplorer { ex ->
+        val apps = ex.apps
+        if (apps == null || apps.tab == tab) ex else ex.copy(apps = apps.copy(tab = tab), focus = null)
+    }
+
+    fun toggleCache(node: Node) = updateExplorer { ex ->
+        ex.apps?.let { a -> ex.copy(apps = a.copy(cacheCollector = a.cacheCollector.toggle(node))) } ?: ex
+    }
+
+    fun clearCacheSelection() = updateExplorer { ex ->
+        ex.apps?.let { a -> ex.copy(apps = a.copy(cacheCollector = a.cacheCollector.cleared())) } ?: ex
+    }
+
+    fun selectAllCache() = updateExplorer { ex ->
+        ex.apps?.let { a ->
+            ex.copy(apps = a.copy(cacheCollector = a.cacheRoot.children.fold(Collector()) { c, n -> c.plus(n) }))
+        } ?: ex
+    }
+
+    /** Clears the cache of the selected apps through Shizuku (the only way Android lets us do it). */
+    fun clearCaches() {
+        val ex = _state.value.explorer ?: return
+        val apps = ex.apps ?: return
+        val items = apps.cacheCollector.items
+        if (items.isEmpty() || _state.value.deleting) return
+        val status = container.shizuku.status()
+        _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
+        if (status != ShizukuStatus.READY) return // the screen shows the setup prompt instead of the button
+
+        val packages = items.mapNotNull { AppsTree.packageOf(it.id) }
+        viewModelScope.launch {
+            _state.update { it.copy(deleting = true) }
+            try {
+                val result = container.privilegedRemover.clearCaches(packages)
+                val freed = items.filter { AppsTree.packageOf(it.id) in result.removed }.sumOf { it.size }
+                updateExplorer { cur ->
+                    val a = cur.apps ?: return@updateExplorer cur
+                    cur.withUsages(AppsTree.withClearedCache(a.usages, result.removed))
+                }
+                if (result.removed.isNotEmpty()) _messages.tryEmit(UiMessage.CacheCleared(freed))
+                if (result.failures.isNotEmpty()) {
+                    _messages.tryEmit(UiMessage.CacheFailed(result.failures.size, result.failures.values.firstOrNull()))
+                }
+            } finally {
+                _state.update { it.copy(deleting = false) }
+            }
+        }
+    }
+
+    /** Rebuilds both trees from fresh figures, keeping the user's place and re-resolving the selections. */
+    private fun ExplorerState.withUsages(newUsages: List<AppUsage>): ExplorerState {
+        val apps = apps ?: return this
+        val newRoot = AppsTree.build(newUsages, apps.labels)
+        val newCache = AppsTree.buildCache(newUsages, apps.labels)
+        return copy(
+            root = newRoot,
+            current = newRoot.findById(current.id) ?: newRoot,
+            collector = collector.rebound(newRoot),
+            focus = null,
+            apps = apps.copy(usages = newUsages, cacheRoot = newCache, cacheCollector = apps.cacheCollector.rebound(newCache)),
+        )
+    }
+
+    private fun Collector.rebound(tree: Node): Collector =
+        items.fold(Collector()) { c, n -> tree.findById(n.id)?.let { c.plus(it) } ?: c }
 
     // ---- settings ------------------------------------------------------------------------------
 
     fun openSettings() {
-        refreshShizuku()
+        refreshSetup()
         _state.update { it.copy(screen = Screen.SETTINGS) }
     }
 
     fun setRemovalMode(mode: AppRemovalMode) {
         container.settings.removalMode = mode
         _state.update { it.copy(settings = it.settings.copy(removalMode = mode, removalChosen = true)) }
-        if (mode == AppRemovalMode.SHIZUKU) refreshShizuku()
+        if (mode == AppRemovalMode.SHIZUKU) refreshSetup()
     }
 
     /** Re-reads what Shizuku can do right now (also called when its binder or our permission changes). */
-    fun refreshShizuku() {
+    fun refreshSetup() {
         val status = container.shizuku.status()
-        _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
+        val usage = container.hasUsageAccess()
+        _state.update { it.copy(settings = it.settings.copy(shizuku = status, usageAccess = usage)) }
     }
 
     // ---- local trash ---------------------------------------------------------------------------

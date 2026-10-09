@@ -7,7 +7,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AppsTreeTest {
-    private val labels = AppsTreeLabels("Apps", "Code", "Data", "Cache")
+    private val labels = AppsTreeLabels("Apps", "Code", "Data", "Cache", "App cache")
 
     private val apps = listOf(
         AppUsage("com.big", "Big", isSystem = false, codeBytes = 500, dataBytes = 300, cacheBytes = 200),
@@ -51,5 +51,26 @@ class AppsTreeTest {
         assertEquals("com.big", AppsTree.packageOf("app:com.big#data"))
         assertNull(AppsTree.packageOf("/storage/emulated/0/x"))
         assertNull(AppsTree.packageOf("apps:root"))
+    }
+
+    @Test
+    fun `cache tree is sized by cache only and keeps system apps`() {
+        val cache = AppsTree.buildCache(apps, labels)
+        assertEquals("App cache", cache.name)
+        assertEquals(listOf("Big", "System"), cache.children.map { it.name })
+        assertEquals(listOf(200L, 5L), cache.children.map { it.size })
+        assertTrue(cache.children.all { it.isFile && it.isCollectible })
+        assertEquals("com.big", AppsTree.packageOf(cache.children[0].id))
+    }
+
+    @Test
+    fun `usage list helpers`() {
+        val cleared = AppsTree.withClearedCache(apps, setOf("com.big"))
+        assertEquals(0L, cleared.first { it.packageName == "com.big" }.cacheBytes)
+        assertEquals(300L, cleared.first { it.packageName == "com.big" }.dataBytes)
+        assertEquals(5L, cleared.first { it.packageName == "com.sys" }.cacheBytes)
+        assertEquals(listOf("com.small", "com.sys", "com.empty", "com.noname"),
+            AppsTree.withoutPackages(apps, setOf("com.big")).map { it.packageName })
+        assertEquals(listOf("System"), AppsTree.buildCache(AppsTree.withClearedCache(apps, setOf("com.big")), labels).children.map { it.name })
     }
 }

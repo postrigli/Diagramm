@@ -64,4 +64,18 @@ class PrivilegedPackageRemoverTest {
         assertFalse(PrivilegedPackageRemover.isValidPackageName("1com.example"))
         assertFalse(PrivilegedPackageRemover.isValidPackageName("com..example"))
     }
+
+    @Test
+    fun `clearCaches runs pm clear --cache-only and never touches data`() = runTest {
+        val runner = FakeRunner { cmd ->
+            if (cmd.last() == "com.bad.app") CommandResult(255, "Error: Unknown option --cache-only") else CommandResult(0, "Success")
+        }
+        val result = PrivilegedPackageRemover(runner).clearCaches(listOf("com.ok.app", "com.bad.app", "bad name; reboot"))
+        assertEquals(setOf("com.ok.app"), result.removed)
+        assertEquals(listOf("pm", "clear", "--cache-only", "com.ok.app"), runner.commands[0])
+        assertEquals(2, runner.commands.size) // the invalid name was never executed
+        assertTrue(runner.commands.all { "--cache-only" in it }) // a plain `pm clear` would wipe user data
+        assertEquals("Error: Unknown option --cache-only", result.failures["com.bad.app"])
+        assertTrue("bad name; reboot" in result.failures)
+    }
 }

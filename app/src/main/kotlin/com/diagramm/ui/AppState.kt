@@ -3,6 +3,8 @@ package com.diagramm.ui
 import com.diagramm.data.AppRemovalMode
 import com.diagramm.data.ShizukuStatus
 import com.diagramm.model.Collector
+import com.diagramm.storage.AppsTreeLabels
+import com.diagramm.storage.AppUsage
 import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
 import com.diagramm.storage.StorageQuota
@@ -33,6 +35,19 @@ data class ScanUi(
     val currentPath: String = "",
 )
 
+enum class AppsTab { APPS, CACHE }
+
+/** Extra state of the "Apps" explorer: the raw figures (single source of truth) and the cache view. */
+data class AppsExplorer(
+    val usages: List<AppUsage>,
+    val labels: AppsTreeLabels,
+    /** Apps sized by cache only; the tree shown on the "Cache" tab. */
+    val cacheRoot: Node,
+    val tab: AppsTab = AppsTab.APPS,
+    /** Apps whose cache the user wants cleared (separate from the uninstall collector). */
+    val cacheCollector: Collector = Collector(),
+)
+
 data class ExplorerState(
     val source: SourceItem,
     val root: Node,
@@ -43,6 +58,7 @@ data class ExplorerState(
     val focus: Node? = null,
     /** When set, the list shows the biggest files of this category instead of the folder's children. */
     val category: FileCategory? = null,
+    val apps: AppsExplorer? = null,
 )
 
 data class SettingsUi(
@@ -50,6 +66,8 @@ data class SettingsUi(
     /** False until the user picked a mode: the first-run question is shown. */
     val removalChosen: Boolean = false,
     val shizuku: ShizukuStatus = ShizukuStatus.UNKNOWN,
+    /** "Usage access" (needed to read app sizes) is granted. */
+    val usageAccess: Boolean = false,
 )
 
 data class TrashUi(val source: SourceItem, val entries: List<TrashEntry>)
@@ -74,4 +92,6 @@ sealed interface UiMessage {
     data class ConnectFailed(val reason: String?) : UiMessage
     /** Shizuku mode is on but Shizuku is not ready: the system uninstaller was used instead. */
     data object ShizukuFallback : UiMessage
+    data class CacheCleared(val bytes: Long) : UiMessage
+    data class CacheFailed(val count: Int, val reason: String?) : UiMessage
 }

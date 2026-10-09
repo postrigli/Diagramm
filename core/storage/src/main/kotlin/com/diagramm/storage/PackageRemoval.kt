@@ -12,6 +12,7 @@ fun interface CommandRunner {
 }
 
 data class PackageRemovalResult(
+    /** Packages the command succeeded for. */
     val removed: Set<String>,
     /** package name -> short reason */
     val failures: Map<String, String>,
@@ -25,9 +26,25 @@ data class PackageRemovalResult(
  */
 class PrivilegedPackageRemover(private val runner: CommandRunner) {
 
+    /** `pm uninstall` for every package. */
     suspend fun remove(
         packages: List<String>,
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): PackageRemovalResult = runPerPackage(packages, onProgress) { listOf("pm", "uninstall", it) }
+
+    /**
+     * Deletes only the cache of every package (`pm clear --cache-only`), leaving data and settings alone.
+     * [PackageRemovalResult.removed] then holds the packages whose cache was cleared.
+     */
+    suspend fun clearCaches(
+        packages: List<String>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): PackageRemovalResult = runPerPackage(packages, onProgress) { listOf("pm", "clear", "--cache-only", it) }
+
+    private suspend fun runPerPackage(
+        packages: List<String>,
+        onProgress: (done: Int, total: Int) -> Unit,
+        command: (String) -> List<String>,
     ): PackageRemovalResult {
         val removed = LinkedHashSet<String>()
         val failures = LinkedHashMap<String, String>()
@@ -38,7 +55,7 @@ class PrivilegedPackageRemover(private val runner: CommandRunner) {
                 failures[pkg] = "Invalid package name"
             } else {
                 try {
-                    val r = runner.run(listOf("pm", "uninstall", pkg))
+                    val r = runner.run(command(pkg))
                     if (r.exitCode == 0 && r.output.contains("Success")) removed.add(pkg) else failures[pkg] = reason(r)
                 } catch (e: IOException) {
                     failures[pkg] = e.message ?: "command failed"

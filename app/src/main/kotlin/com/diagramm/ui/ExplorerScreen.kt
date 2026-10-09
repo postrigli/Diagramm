@@ -1,6 +1,17 @@
 package com.diagramm.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -76,6 +87,7 @@ private class ExplorerData(val sunburst: Sunburst, val totals: Map<FileCategory,
 fun ExplorerScreen(
     ex: ExplorerState,
     vm: MainViewModel,
+    shizukuReady: Boolean,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -88,13 +100,21 @@ fun ExplorerScreen(
     val isLocal = ex.source.type == SourceType.LOCAL
     val isApps = ex.source.type == SourceType.APPS
 
+    // "Apps" has two views of the same data at its root: the apps themselves and their cache.
+    val apps = ex.apps
+    val atAppsRoot = apps != null && current.parent == null
+    val cacheTab = atAppsRoot && apps?.tab == AppsTab.CACHE
+    val shown: Node = if (cacheTab && apps != null) apps.cacheRoot else current
+    val shownCollector: Collector = if (cacheTab && apps != null) apps.cacheCollector else ex.collector
+    val cacheTitle = stringResource(R.string.apps_cache_title)
+
     // Layout and category totals walk the whole subtree: keep them off the main thread.
-    val data by produceState<ExplorerData?>(null, current) {
+    val data by produceState<ExplorerData?>(null, shown) {
         value = withContext(Dispatchers.Default) {
-            ExplorerData(SunburstLayout.layout(current), if (isApps) emptyMap() else FileCategorizer.totals(current))
+            ExplorerData(SunburstLayout.layout(shown), if (isApps) emptyMap() else FileCategorizer.totals(shown))
         }
     }
-    val readyData = data?.takeIf { it.sunburst.root === current }
+    val readyData = data?.takeIf { it.sunburst.root === shown }
 
     val flat by produceState<List<Node>?>(null, current, ex.category) {
         val category = ex.category
@@ -121,11 +141,12 @@ fun ExplorerScreen(
         }
     }
 
-    val listItems: List<Node> = if (ex.category == null) current.children else flat.orEmpty()
+    val listItems: List<Node> = if (ex.category == null) shown.children else flat.orEmpty()
 
     // Package whose settings page the info strip can open (the focused part, or the app we are inside).
     val appPackage = if (isApps) AppsTree.packageOf((ex.focus ?: current).id) else null
     val summary = when {
+        cacheTab -> stringResource(R.string.apps_count, shown.children.size) + " · " + fmt(shown.size)
         isApps && current.parent == null ->
             stringResource(R.string.apps_count, current.children.size) + " · " + fmt(current.usedSize)
         isApps -> fmt(current.usedSize)
@@ -150,10 +171,10 @@ fun ExplorerScreen(
                 SunburstChart(
                     sunburst = data?.sunburst,
                     palette = palette,
-                    collector = ex.collector,
+                    collector = shownCollector,
                     focusId = ex.focus?.id,
-                    centerTitle = fmt(current.usedSize),
-                    centerSubtitle = nodeTitle(current),
+                    centerTitle = fmt(shown.usedSize),
+                    centerSubtitle = if (cacheTab) cacheTitle else nodeTitle(current),
                     labelText = labelText,
                     sizeText = fmt,
                     onArc = { arc -> onArcTapped(arc, vm) },
@@ -161,45 +182,87 @@ fun ExplorerScreen(
                     modifier = m,
                 )
             }
+            val swipeToSwitch = if (atAppsRoot && apps != null) {
+                Modifier.pointerInput(apps.tab) {
+                    var total = 0f
+                    val threshold = 64.dp.toPx()
+                    detectHorizontalDragGestures(
+                        onDragStart = { total = 0f },
+                        onDragEnd = {
+                            if (total < -threshold && apps.tab == AppsTab.APPS) vm.setAppsTab(AppsTab.CACHE)
+                            else if (total > threshold && apps.tab == AppsTab.CACHE) vm.setAppsTab(AppsTab.APPS)
+                        },
+                        onHorizontalDrag = { _, dx -> total += dx },
+                    )
+                }
+            } else {
+                Modifier
+            }
             val details: @Composable (Modifier) -> Unit = { m ->
-                Column(m) {
+                Column(m.then(swipeToSwitch)) {
+                    if (atAppsRoot && apps != null) {
+                        AppsTabs(apps.tab, ex.root.usedSize, apps.cacheRoot.size, fmt, onSelect = { vm.setAppsTab(it) })
+                    }
                     InfoStrip(
-                        current = current,
+                        current = shown,
                         focus = ex.focus,
-                        collected = ex.focus?.let { ex.collector.covers(it) } ?: false,
+                        collected = ex.focus?.let { shownCollector.covers(it) } ?: false,
                         isLocal = isLocal,
                         summary = summary,
                         fmt = fmt,
                         appPackage = appPackage,
-                        onToggle = { ex.focus?.let { vm.toggleCollected(it) } },
+                        onToggle = {
+                            ex.focus?.let { if (cacheTab) vm.toggleCache(it) else vm.toggleCollected(it) }
+                        },
                         onOpen = { ex.focus?.let { openNode(context, it, isLocal) } },
                         onAppSettings = { appPackage?.let { openAppSettings(context, it) } },
                     )
+                    if (cacheTab && apps != null) {
+                        CacheHeader(
+                            empty = apps.cacheRoot.children.isEmpty(),
+                            shizukuReady = shizukuReady,
+                            onSelectAll = { vm.selectAllCache() },
+                            onSetup = { vm.openSettings() },
+                        )
+                    }
                     if (!isApps) {
                         CategoryChips(readyData?.totals.orEmpty(), ex.category, fmt, onSelect = { vm.setCategory(it) })
                     }
-                    NodeList(
-                        nodes = listItems,
-                        parent = current,
-                        colorById = colorById,
-                        palette = palette,
-                        collector = ex.collector,
-                        showPath = ex.category != null,
-                        showFileCount = !isApps,
-                        fmt = fmt,
-                        onClick = { node ->
-                            when {
-                                node.isSynthetic -> vm.focus(node)
-                                node.isDirectory -> vm.navigateTo(node)
-                                else -> {
-                                    vm.focus(node)
-                                    openNode(context, node, isLocal)
-                                }
-                            }
-                        },
-                        onToggle = { vm.toggleCollected(it) },
+                    AnimatedContent(
+                        targetState = cacheTab,
                         modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
+                        transitionSpec = {
+                            val towardsCache = targetState
+                            (slideInHorizontally { if (towardsCache) it / 3 else -it / 3 } + fadeIn()) togetherWith
+                                (slideOutHorizontally { if (towardsCache) -it / 3 else it / 3 } + fadeOut())
+                        },
+                        label = "apps-tab",
+                    ) { cache ->
+                        val tree = if (cache && apps != null) apps.cacheRoot else current
+                        val collector = if (cache && apps != null) apps.cacheCollector else ex.collector
+                        NodeList(
+                            nodes = if (ex.category == null) tree.children else flat.orEmpty(),
+                            parent = tree,
+                            colorById = colorById,
+                            palette = palette,
+                            collector = collector,
+                            showPath = ex.category != null,
+                            showFileCount = !isApps,
+                            fmt = fmt,
+                            onClick = { node ->
+                                when {
+                                    node.isSynthetic -> vm.focus(node)
+                                    node.isDirectory -> vm.navigateTo(node)
+                                    else -> {
+                                        vm.focus(node)
+                                        openNode(context, node, isLocal)
+                                    }
+                                }
+                            },
+                            onToggle = { if (cache) vm.toggleCache(it) else vm.toggleCollected(it) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
             if (landscape) {
@@ -215,8 +278,19 @@ fun ExplorerScreen(
             }
         }
 
-        AnimatedVisibility(visible = !ex.collector.isEmpty) {
-            CollectorBar(ex.collector, split, onClear = { vm.clearCollector() }, onDelete = onDelete)
+        AnimatedVisibility(visible = !shownCollector.isEmpty) {
+            if (cacheTab) {
+                CacheBar(
+                    collector = shownCollector,
+                    split = split,
+                    shizukuReady = shizukuReady,
+                    onClear = { vm.clearCacheSelection() },
+                    onClean = { vm.clearCaches() },
+                    onSetup = { vm.openSettings() },
+                )
+            } else {
+                CollectorBar(ex.collector, split, onClear = { vm.clearCollector() }, onDelete = onDelete)
+            }
         }
     }
 }
@@ -493,4 +567,118 @@ private fun percent(part: Long, whole: Long): String {
     if (whole <= 0) return ""
     val p = part * 100.0 / whole
     return if (p < 1.0) "<1%" else "${p.roundToInt()}%"
+}
+
+@Composable
+private fun AppsTabs(
+    tab: AppsTab,
+    appsSize: Long,
+    cacheSize: Long,
+    fmt: (Long) -> String,
+    onSelect: (AppsTab) -> Unit,
+) {
+    TabRow(
+        selectedTabIndex = tab.ordinal,
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.primary,
+    ) {
+        Tab(
+            selected = tab == AppsTab.APPS,
+            onClick = { onSelect(AppsTab.APPS) },
+            text = { TabLabel(stringResource(R.string.apps_tab_apps), fmt(appsSize)) },
+        )
+        Tab(
+            selected = tab == AppsTab.CACHE,
+            onClick = { onSelect(AppsTab.CACHE) },
+            text = { TabLabel(stringResource(R.string.apps_tab_cache), fmt(cacheSize)) },
+        )
+    }
+}
+
+@Composable
+private fun TabLabel(title: String, size: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(size, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** Explains what clearing a cache means, offers "select all", and says so when Shizuku is not ready. */
+@Composable
+private fun CacheHeader(
+    empty: Boolean,
+    shizukuReady: Boolean,
+    onSelectAll: () -> Unit,
+    onSetup: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(if (empty) R.string.cache_empty else R.string.cache_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                if (!empty) TextButton(onClick = onSelectAll) { Text(stringResource(R.string.cache_select_all)) }
+            }
+            if (!shizukuReady && !empty) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.cache_need_shizuku),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onSetup) { Text(stringResource(R.string.cache_setup)) }
+                }
+            }
+        }
+    }
+}
+
+/** The collector bar of the cache tab: calm primary colour, because clearing a cache loses nothing. */
+@Composable
+private fun CacheBar(
+    collector: Collector,
+    split: (Long) -> Pair<String, String>,
+    shizukuReady: Boolean,
+    onClear: () -> Unit,
+    onClean: () -> Unit,
+    onSetup: () -> Unit,
+) {
+    val (value, unit) = split(collector.totalSize)
+    Surface(
+        tonalElevation = 8.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(56.dp).border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(value, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(unit + " " + stringResource(R.string.cache_selected), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    stringResource(R.string.apps_count, collector.items.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onClear) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear)) }
+            if (shizukuReady) {
+                Button(onClick = onClean) { Text(stringResource(R.string.cache_clear)) }
+            } else {
+                FilledTonalButton(onClick = onSetup) { Text(stringResource(R.string.cache_setup)) }
+            }
+        }
+    }
 }

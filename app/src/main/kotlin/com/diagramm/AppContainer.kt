@@ -9,6 +9,7 @@ import com.diagramm.data.LocalVolume
 import com.diagramm.data.LocalVolumes
 import com.diagramm.data.ProcessCommandRunner
 import com.diagramm.data.SecureStore
+import com.diagramm.data.UsageAccess
 import com.diagramm.data.ShizukuAccess
 import com.diagramm.data.ShizukuShell
 import com.diagramm.gdrive.GoogleDriveProvider
@@ -44,7 +45,9 @@ class AppContainer(private val context: Context) {
     fun localProvider(id: String, name: String, root: File): StorageProvider =
         LocalStorageProvider(id = id, displayName = name, root = root, isVolumeRoot = true, trash = trashFor(root))
 
-    fun appsProvider(): StorageProvider = InstalledAppsProvider(context)
+    fun appsProvider(): InstalledAppsProvider = InstalledAppsProvider(context)
+
+    fun hasUsageAccess(): Boolean = UsageAccess.has(context)
 
     fun googleProvider(): StorageProvider = GoogleDriveProvider(
         AuthorizedHttp(httpClient, AccessTokenProvider { googleAuth.silentToken() }),

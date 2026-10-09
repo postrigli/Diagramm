@@ -116,16 +116,41 @@
 
     <string name="removal_shizuku_title">С Shizuku</string>
     <string name="removal_shizuku_desc">Все выбранные приложения удаляются сразу, без окон подтверждения. Нужно бесплатное приложение Shizuku (работает с root и без него): его запускают один раз и разрешают Diagramm им пользоваться.</string>
-    <string name="shizuku_ready">Shizuku готов к работе.</string>
-    <string name="shizuku_needs_permission">Shizuku запущен. Разрешите Diagramm им пользоваться.</string>
-    <string name="shizuku_not_running">Shizuku установлен, но не запущен. Откройте его и запустите службу (после перезагрузки телефона её нужно запускать заново).</string>
-    <string name="shizuku_not_installed">Shizuku не установлен.</string>
     <string name="shizuku_unsupported">Версия Shizuku слишком старая. Обновите его.</string>
-    <string name="shizuku_unknown">Состояние Shizuku неизвестно.</string>
     <string name="shizuku_action_grant">Разрешить доступ</string>
     <string name="shizuku_action_open">Открыть Shizuku</string>
     <string name="shizuku_action_download">Скачать Shizuku</string>
     <string name="shizuku_action_refresh">Проверить снова</string>
     <string name="apps_uninstall_text_shizuku">Приложения будут удалены сразу, без подтверждения, через Shizuku. Освободится до %1$s (приложения и их данные).</string>
     <string name="msg_shizuku_fallback">Shizuku не готов, поэтому используются окна подтверждения Android. Настройте его через значок шестерёнки.</string>
+
+    <!-- Apps: cache -->
+    <string name="apps_tab_apps">Приложения</string>
+    <string name="apps_tab_cache">Кэш</string>
+    <string name="apps_cache_title">Кэш приложений</string>
+    <string name="cache_hint">Очистка кэша безопасна: данные и настройки приложений не затрагиваются, они просто создадут кэш заново.</string>
+    <string name="cache_empty">Очищать нечего.</string>
+    <string name="cache_select_all">Выбрать всё</string>
+    <string name="cache_need_shizuku">Чтобы чистить кэш других приложений, нужен Shizuku.</string>
+    <string name="cache_setup">Настроить Shizuku</string>
+    <string name="cache_selected">кэша выбрано</string>
+    <string name="cache_clear">Очистить кэш</string>
+    <string name="msg_cache_cleared">Очищено кэша: %1$s</string>
+    <string name="msg_cache_failed">Не удалось очистить кэш приложений: %1$d (%2$s)</string>
+
+    <!-- Shizuku setup guide -->
+    <string name="guide_title">Настройка Shizuku</string>
+    <string name="guide_intro">Сделайте эти шаги один раз. Галочки появляются сами, когда шаг выполнен.</string>
+    <string name="guide_install_title">Установите Shizuku</string>
+    <string name="guide_install_body">Бесплатное приложение, которое позволяет Diagramm удалять приложения и чистить их кэш без окон подтверждения.</string>
+    <string name="guide_start_title">Запустите службу Shizuku</string>
+    <string name="guide_start_body">Откройте Shizuku и нажмите «Запуск». Если на телефоне есть root, запустите через root. Без root: 1) Настройки → О телефоне → Сведения о ПО → 7 раз нажмите «Номер сборки», чтобы включить «Параметры разработчика»; 2) Параметры разработчика → включите «Отладка по Wi-Fi» (нужен Wi-Fi); 3) в Shizuku выберите сопряжение и введите код из «Сопряжение с помощью кода»; 4) вернитесь и нажмите «Запуск». После каждой перезагрузки телефона службу нужно запускать заново.</string>
+    <string name="guide_allow_title">Разрешите Diagramm пользоваться Shizuku</string>
+    <string name="guide_allow_body">Нажмите кнопку: Shizuku покажет запрос, выберите «Разрешать всегда».</string>
+    <string name="guide_usage_title">Особый доступ: данные об использовании</string>
+    <string name="guide_usage_body">Нужен, чтобы видеть размеры приложений. Если переключатель серый и написано «Контролируется настройками с ограниченным доступом» (так бывает у APK, установленных не из магазина): Настройки → Приложения → Diagramm → ⋮ (вверху справа) → «Разрешить ограниченные настройки», затем включите доступ: Настройки → Приложения → ⋮ → Особый доступ → Доступ к данным об использовании → Diagramm. Если в меню ⋮ нет такого пункта, сначала один раз нажмите на серый переключатель.</string>
+    <string name="guide_usage_open">Открыть доступ</string>
+    <string name="guide_app_info">Настройки приложения</string>
+    <string name="guide_battery_title">Батарея (рекомендуется на Samsung)</string>
+    <string name="guide_battery_body">Чтобы One UI не останавливал Shizuku в фоне: Настройки → Приложения → Shizuku → Батарея → «Без ограничений».</string>
 </resources>

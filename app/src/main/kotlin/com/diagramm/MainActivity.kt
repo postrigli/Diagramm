@@ -46,9 +46,9 @@ class MainActivity : ComponentActivity() {
     }
 
     // Shizuku can start, stop or change our permission at any time: keep the settings status current.
-    private val shizukuBinderReceived = Shizuku.OnBinderReceivedListener { vm.refreshShizuku() }
-    private val shizukuBinderDead = Shizuku.OnBinderDeadListener { vm.refreshShizuku() }
-    private val shizukuPermission = Shizuku.OnRequestPermissionResultListener { _, _ -> vm.refreshShizuku() }
+    private val shizukuBinderReceived = Shizuku.OnBinderReceivedListener { vm.refreshSetup() }
+    private val shizukuBinderDead = Shizuku.OnBinderDeadListener { vm.refreshSetup() }
+    private val shizukuPermission = Shizuku.OnRequestPermissionResultListener { _, _ -> vm.refreshSetup() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,7 +67,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        vm.refreshShizuku() // e.g. back from the Shizuku app after starting it
+        vm.refreshSetup() // e.g. back from the Shizuku app after starting it
     }
 
     override fun onDestroy() {

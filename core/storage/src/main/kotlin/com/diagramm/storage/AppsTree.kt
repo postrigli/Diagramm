@@ -16,7 +16,7 @@ data class AppUsage(
 )
 
 /** Localised names for the synthetic parts of the tree. */
-data class AppsTreeLabels(val root: String, val code: String, val data: String, val cache: String)
+data class AppsTreeLabels(val root: String, val code: String, val data: String, val cache: String, val cacheRoot: String)
 
 /**
  * Turns per-app storage figures into a tree the chart can draw: root -> app -> (code, data, cache).
@@ -49,4 +49,20 @@ object AppsTree {
         }
         return Node.directory("apps:root", labels.root, nodes)
     }
+
+    /**
+     * The same apps, sized by their cache only: root -> app. Every app here is collectible, system
+     * apps included, because clearing a cache never harms the app. Apps without cache are left out.
+     */
+    fun buildCache(apps: List<AppUsage>, labels: AppsTreeLabels): Node = Node.directory(
+        "apps-cache:root", labels.cacheRoot,
+        apps.filter { it.cacheBytes > 0 }
+            .map { Node.file(appId(it.packageName), it.label.ifBlank { it.packageName }, it.cacheBytes) },
+    )
+
+    fun withoutPackages(apps: List<AppUsage>, packages: Set<String>): List<AppUsage> =
+        apps.filterNot { it.packageName in packages }
+
+    fun withClearedCache(apps: List<AppUsage>, packages: Set<String>): List<AppUsage> =
+        apps.map { if (it.packageName in packages) it.copy(cacheBytes = 0) else it }
 }

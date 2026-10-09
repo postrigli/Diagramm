@@ -116,16 +116,41 @@
 
     <string name="removal_shizuku_title">With Shizuku</string>
     <string name="removal_shizuku_desc">All selected apps are removed in one go, no confirmation windows. Needs the free Shizuku app (works with or without root); you start it once and allow Diagramm to use it.</string>
-    <string name="shizuku_ready">Shizuku is ready.</string>
-    <string name="shizuku_needs_permission">Shizuku is running. Allow Diagramm to use it.</string>
-    <string name="shizuku_not_running">Shizuku is installed but not running. Open it and start the service (it must be started again after a reboot).</string>
-    <string name="shizuku_not_installed">Shizuku is not installed.</string>
     <string name="shizuku_unsupported">This Shizuku version is too old. Please update it.</string>
-    <string name="shizuku_unknown">Shizuku status is unknown.</string>
     <string name="shizuku_action_grant">Allow access</string>
     <string name="shizuku_action_open">Open Shizuku</string>
     <string name="shizuku_action_download">Get Shizuku</string>
     <string name="shizuku_action_refresh">Check again</string>
     <string name="apps_uninstall_text_shizuku">The apps will be removed right away, without confirmation, through Shizuku. Up to %1$s will be freed (apps and their data).</string>
     <string name="msg_shizuku_fallback">Shizuku is not ready, so Android\'s own confirmation windows are used. Set it up under the gear icon.</string>
+
+    <!-- Apps: cache -->
+    <string name="apps_tab_apps">Apps</string>
+    <string name="apps_tab_cache">Cache</string>
+    <string name="apps_cache_title">App cache</string>
+    <string name="cache_hint">Clearing a cache is safe: apps keep their data and settings and simply rebuild it.</string>
+    <string name="cache_empty">No cache to clear.</string>
+    <string name="cache_select_all">Select all</string>
+    <string name="cache_need_shizuku">Clearing the cache of other apps needs Shizuku.</string>
+    <string name="cache_setup">Set up Shizuku</string>
+    <string name="cache_selected">of cache selected</string>
+    <string name="cache_clear">Clear cache</string>
+    <string name="msg_cache_cleared">Cache cleared: %1$s</string>
+    <string name="msg_cache_failed">Could not clear the cache of %1$d apps: %2$s</string>
+
+    <!-- Shizuku setup guide -->
+    <string name="guide_title">Setting up Shizuku</string>
+    <string name="guide_intro">Do these steps once. Ticks appear by themselves as each step is done.</string>
+    <string name="guide_install_title">Install Shizuku</string>
+    <string name="guide_install_body">A free app that lets Diagramm remove apps and clear their cache without confirmation windows.</string>
+    <string name="guide_start_title">Start the Shizuku service</string>
+    <string name="guide_start_body">Open Shizuku and tap Start. If your phone is rooted, start it with root. Without root: 1) Settings → About phone → Software information → tap \"Build number\" 7 times to enable Developer options; 2) Developer options → turn on \"Wireless debugging\" (Wi-Fi is required); 3) in Shizuku choose pairing and enter the code from \"Pair device with pairing code\"; 4) go back and tap Start. After every phone restart the service has to be started again.</string>
+    <string name="guide_allow_title">Allow Diagramm to use Shizuku</string>
+    <string name="guide_allow_body">Tap the button: Shizuku shows a request, choose \"Allow all the time\".</string>
+    <string name="guide_usage_title">Special access: Usage access</string>
+    <string name="guide_usage_body">Needed to read app sizes. If the switch is grey and says \"Controlled by restricted settings\" (it happens with APKs installed outside a store): Settings → Apps → Diagramm → ⋮ (top right) → \"Allow restricted settings\", then turn the access on: Settings → Apps → ⋮ → Special access → Usage data access → Diagramm. If the ⋮ menu has no such item, tap the grey switch once first.</string>
+    <string name="guide_usage_open">Open Usage access</string>
+    <string name="guide_app_info">App settings</string>
+    <string name="guide_battery_title">Battery (recommended on Samsung)</string>
+    <string name="guide_battery_body">So that One UI does not stop Shizuku in the background: Settings → Apps → Shizuku → Battery → \"Unrestricted\".</string>
 </resources>
