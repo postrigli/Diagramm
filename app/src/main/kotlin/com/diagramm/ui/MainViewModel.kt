@@ -73,7 +73,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 quota = StorageQuota(v.root.totalSpace, (v.root.totalSpace - v.root.freeSpace).coerceAtLeast(0)),
             )
         }
-        val apps = SourceItem("apps", SourceType.APPS)
+        val apps = SourceItem("apps", SourceType.APPS, summaryBytes = container.appsSummary.read()?.totalBytes)
         val google = SourceItem("gdrive", SourceType.GDRIVE, connected = container.googleAuth.connected.value)
         val yandex = SourceItem(
             "yandex", SourceType.YANDEX,
@@ -173,6 +173,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 _state.update {
                     it.copy(screen = Screen.EXPLORER, scan = null, explorer = ExplorerState(source, tree, tree, apps = apps))
                 }
+                if (apps != null) container.appsSummary.write(tree.size, apps.cacheRoot.size)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: AuthRequiredException) {
@@ -332,6 +333,14 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
             val apps = ex.apps ?: return@updateExplorer ex
             ex.withUsages(AppsTree.withoutPackages(apps.usages, packages.toSet()))
         }
+        persistAppsSummary()
+    }
+
+    /** Remembers the current totals so the main screen can show them next time ("minus what was deleted"). */
+    private fun persistAppsSummary() {
+        val ex = _state.value.explorer ?: return
+        val apps = ex.apps ?: return
+        container.appsSummary.write(ex.root.size, apps.cacheRoot.size)
     }
 
     // ---- apps: cache tab ------------------------------------------------------------------------
@@ -375,6 +384,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                     val a = cur.apps ?: return@updateExplorer cur
                     cur.withUsages(AppsTree.withClearedCache(a.usages, result.removed))
                 }
+                persistAppsSummary()
                 if (result.removed.isNotEmpty()) _messages.tryEmit(UiMessage.CacheCleared(freed))
                 if (result.failures.isNotEmpty()) {
                     _messages.tryEmit(UiMessage.CacheFailed(result.failures.size, result.failures.values.firstOrNull()))

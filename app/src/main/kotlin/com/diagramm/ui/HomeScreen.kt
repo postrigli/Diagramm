@@ -113,6 +113,16 @@ private fun SourceCard(
                 }
             }
 
+            if (source.type == SourceType.APPS && source.summaryBytes != null) {
+                Text(
+                    stringResource(R.string.apps_last_total, fmt(source.summaryBytes)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
+
             Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

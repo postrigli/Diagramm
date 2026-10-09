@@ -21,6 +21,8 @@ data class SourceItem(
     val rootPath: String? = null,
     val quota: StorageQuota? = null,
     val trashBytes: Long = 0,
+    /** "Apps" only: total size found by the last visit, minus what was removed since (not recomputed live). */
+    val summaryBytes: Long? = null,
     val connected: Boolean = true,
     val configured: Boolean = true,
 )

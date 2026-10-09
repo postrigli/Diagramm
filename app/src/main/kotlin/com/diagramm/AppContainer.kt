@@ -4,6 +4,7 @@ import android.content.Context
 import com.diagramm.auth.GoogleAuth
 import com.diagramm.auth.YandexAuth
 import com.diagramm.data.AppSettings
+import com.diagramm.data.AppsSummaryStore
 import com.diagramm.data.InstalledAppsProvider
 import com.diagramm.data.LocalVolume
 import com.diagramm.data.LocalVolumes
@@ -28,6 +29,7 @@ import java.util.concurrent.TimeUnit
 class AppContainer(private val context: Context) {
     val secureStore = SecureStore(context)
     val settings = AppSettings(context)
+    val appsSummary = AppsSummaryStore(context)
     val shizuku = ShizukuAccess(context)
     val privilegedRemover = PrivilegedPackageRemover(ProcessCommandRunner(start = ShizukuShell::start))
     val googleAuth = GoogleAuth(context, secureStore)
