@@ -65,31 +65,13 @@ app             Android: Jetpack Compose, ViewModel, авторизация
 
 ## Подключение облаков
 
-Приложению нужны ваши собственные OAuth-доступы — их нельзя вшить в репозиторий.
+Приложению нужны ваши собственные OAuth-доступы (в репозиторий их вшить нельзя). Подробная пошаговая
+инструкция со ссылками: [docs/CLOUDS.md](docs/CLOUDS.md). Коротко:
 
-### Google Диск
-
-1. В [Google Cloud Console](https://console.cloud.google.com/) создайте проект и включите **Google Drive API**.
-2. Настройте **OAuth consent screen** (тип External, режим Testing), добавьте свой аккаунт в *Test users*
-   и scope `https://www.googleapis.com/auth/drive`.
-3. Создайте **OAuth client ID** типа **Android**:
-   - Package name: `com.diagramm`
-   - SHA-1: `3E:F2:B0:56:E9:EB:EF:FC:E7:BA:0E:CD:86:30:4C:60:BF:94:A5:B1`
-     (отпечаток ключа `app/diagramm-debug.jks`, которым подписываются и локальные, и CI-сборки).
-4. В приложении нажмите «Подключить» у Google Диска. Секрет в приложение вносить не нужно.
-
-Scope `drive` — «restricted»: для личного пользования (Testing, до 100 тестовых пользователей) проверка
-Google не требуется; для публикации в Google Play понадобится верификация приложения.
-
-### Яндекс Диск
-
-1. На [oauth.yandex.ru](https://oauth.yandex.ru/) создайте приложение с правами
-   `cloud_api:disk.info`, `cloud_api:disk.read`, `cloud_api:disk.write`.
-2. Callback URI: `yx<CLIENT_ID>://token` (подставьте ID приложения).
-3. Передайте ID сборке — любым из способов:
-   - `YANDEX_CLIENT_ID=<id>` в `local.properties`;
-   - `./gradlew :app:assembleDebug -PYANDEX_CLIENT_ID=<id>`;
-   - переменная окружения `YANDEX_CLIENT_ID` (для CI — секрет репозитория).
+- **Google Диск:** проект в Google Cloud → Drive API → Google Auth Platform (External, тестовый пользователь, область `drive`)
+  → клиент типа Android с пакетом `com.diagramm` и SHA-1 `3E:F2:B0:56:E9:EB:EF:FC:E7:BA:0E:CD:86:30:4C:60:BF:94:A5:B1`.
+- **Яндекс Диск:** приложение на oauth.yandex.ru (платформа Android, пакет `com.diagramm`, SHA-256 из docs/CLOUDS.md,
+  права `cloud_api:disk.info/read/write`), затем ClientID в переменную репозитория `YANDEX_CLIENT_ID` (или `local.properties`).
 
 ## Удаление приложений через Shizuku
 

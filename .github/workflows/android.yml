@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Yandex OAuth client id (not a secret): set it under Settings > Secrets and variables > Actions > Variables.
+      # Empty is fine - the Yandex Disk button then stays disabled in the app.
+      YANDEX_CLIENT_ID: ${{ vars.YANDEX_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v4
 
