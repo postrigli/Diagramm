@@ -1,50 +1,46 @@
 package com.diagramm.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import com.diagramm.chart.Arc
+import com.diagramm.chart.CategoricalPalette
 import com.diagramm.model.NodeKind
-import kotlin.math.abs
-import kotlin.math.max
 
-/** Hue per top-level branch, lightness fading with depth - the DaisyDisk look. */
+/**
+ * Sector colours. Each top-level branch takes the next hue of a fixed, colour-blind-safe sequence
+ * (blue, orange, aqua, yellow, magenta, green, violet, red - see [CategoricalPalette]); everything
+ * inside a branch keeps its hue and only shifts slightly in lightness with depth, so the nested
+ * rings read as "part of that folder". Branches beyond the eighth reuse the hues in a paler variant.
+ * Free space, hidden data and aggregated small objects are neutral greys, never a hue.
+ */
 class ChartPalette(private val dark: Boolean) {
-    private val freeColor = if (dark) Color(0xFF2E3C60) else Color(0xFFDDE3F2)
-    private val hiddenColor = if (dark) Color(0xFF5B6B94) else Color(0xFF98A4C2)
-    private val smallColor = if (dark) Color(0xFF7B88AB) else Color(0xFFB5BED6)
+    private val free = if (dark) Color(0xFF3A404D) else Color(0xFFD3D8E2)
+    private val hidden = if (dark) Color(0xFF6A7283) else Color(0xFF9AA2B3)
+    private val small = if (dark) Color(0xFF8A91A1) else Color(0xFFB7BDCB)
 
-    fun branch(index: Int, count: Int, depth: Int): Color {
-        val hue = (150f + 300f * index / max(1, count)) % 360f
-        val lightness = if (dark) max(0.30f, 0.66f - 0.06f * (depth - 1)) else max(0.36f, 0.58f - 0.05f * (depth - 1))
-        return hsl(hue, if (dark) 0.55f else 0.62f, lightness)
+    fun branch(index: Int, depth: Int): Color {
+        val base = Color(0xFF000000L or CategoricalPalette.slot(index, dark).toLong())
+        val tier = CategoricalPalette.tier(index).coerceAtMost(2)
+        val paler = if (tier == 0) base else lerp(base, Color.White, 0.32f * tier)
+        val step = 0.07f * (depth - 1)
+        // lighter outwards on dark surfaces, slightly darker outwards on light ones: contrast with the
+        // background never drops below the validated base colour
+        return if (dark) lerp(paler, Color.White, step) else lerp(paler, Color.Black, step * 0.8f)
     }
 
-    fun arc(arc: Arc, branchCount: Int): Color {
-        val node = arc.node ?: return smallColor
+    fun arc(arc: Arc): Color {
+        val node = arc.node ?: return small
         return when (node.kind) {
-            NodeKind.FREE_SPACE -> freeColor
-            NodeKind.HIDDEN_SPACE -> hiddenColor
-            else -> branch(arc.colorIndex, branchCount, arc.depth)
+            NodeKind.FREE_SPACE -> free
+            NodeKind.HIDDEN_SPACE -> hidden
+            else -> if (arc.colorIndex < 0) small else branch(arc.colorIndex, arc.depth)
         }
     }
 
-    val smallObjects: Color get() = smallColor
-    val free: Color get() = freeColor
-    val hidden: Color get() = hiddenColor
+    val smallObjects: Color get() = small
 }
 
-/** HSL -> RGB; hue in degrees [0, 360), saturation and lightness in [0, 1]. */
-private fun hsl(h: Float, s: Float, l: Float): Color {
-    val c = (1f - abs(2f * l - 1f)) * s
-    val hp = h / 60f
-    val x = c * (1f - abs(hp % 2f - 1f))
-    val (r, g, b) = when {
-        hp < 1f -> Triple(c, x, 0f)
-        hp < 2f -> Triple(x, c, 0f)
-        hp < 3f -> Triple(0f, c, x)
-        hp < 4f -> Triple(0f, x, c)
-        hp < 5f -> Triple(x, 0f, c)
-        else -> Triple(c, 0f, x)
-    }
-    val m = l - c / 2f
-    return Color(r + m, g + m, b + m)
-}
+/** Dark text on light sectors, white text on dark ones. */
+fun textColorOn(background: Color): Color =
+    if (background.luminance() > 0.45f) Color(0xFF10131A) else Color.White

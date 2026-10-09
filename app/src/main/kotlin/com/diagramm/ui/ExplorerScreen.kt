@@ -63,6 +63,7 @@ import com.diagramm.model.Collector
 import com.diagramm.model.FileCategorizer
 import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
+import com.diagramm.model.NodeKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -104,13 +105,26 @@ fun ExplorerScreen(
         }
     }
 
+    // text shown inside sectors (resolved here because string resources need a composable scope)
+    val freeLabel = stringResource(R.string.free_space)
+    val hiddenLabel = stringResource(R.string.hidden_space)
+    val labelText: (Node) -> String = remember(freeLabel, hiddenLabel) {
+        { node ->
+            when (node.kind) {
+                NodeKind.FREE_SPACE -> freeLabel
+                NodeKind.HIDDEN_SPACE -> hiddenLabel
+                else -> node.name
+            }
+        }
+    }
+
     val listItems: List<Node> = if (ex.category == null) current.children else flat.orEmpty()
 
     // colour of each depth-1 child, shared between chart and list
     val colorById: Map<String, Color> = remember(readyData, palette) {
         val sb = readyData?.sunburst
         if (sb == null) emptyMap() else sb.arcsAt(1).mapNotNull { a ->
-            a.node?.let { it.id to palette.arc(a, sb.branchCount) }
+            a.node?.let { it.id to palette.arc(a) }
         }.toMap()
     }
 
@@ -128,6 +142,8 @@ fun ExplorerScreen(
                     focusId = ex.focus?.id,
                     centerTitle = fmt(current.usedSize),
                     centerSubtitle = nodeTitle(current),
+                    labelText = labelText,
+                    sizeText = fmt,
                     onArc = { arc -> onArcTapped(arc, vm) },
                     onCenter = { vm.navigateUp() },
                     modifier = m,
@@ -175,7 +191,7 @@ fun ExplorerScreen(
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
-                    chart(Modifier.fillMaxWidth().height(boxHeight * 0.42f))
+                    chart(Modifier.fillMaxWidth().height(boxHeight * 0.46f))
                     details(Modifier.weight(1f).fillMaxWidth())
                 }
             }

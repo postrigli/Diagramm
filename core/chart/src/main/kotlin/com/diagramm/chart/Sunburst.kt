@@ -14,7 +14,10 @@ data class Arc(
     val depth: Int,
     val startAngle: Double,
     val sweepAngle: Double,
-    /** Index of the depth-1 branch this arc descends from; -1 for aggregated segments. Drives colouring. */
+    /**
+     * Index of the depth-1 branch this arc descends from, counted over real folders/files only; -1 for
+     * aggregated segments and for free/hidden space (those get neutral colours). Drives colouring.
+     */
     val colorIndex: Int,
     val aggregated: List<Node> = emptyList(),
 ) {
@@ -67,7 +70,7 @@ class Sunburst internal constructor(
     fun arcsAt(depth: Int): List<Arc> = byDepth.getOrElse(depth - 1) { emptyList() }
 
     /** Number of distinct depth-1 branches, for spreading colours. */
-    val branchCount: Int = arcs.count { it.depth == 1 && !it.isAggregated }
+    val branchCount: Int = arcs.count { it.depth == 1 && it.colorIndex >= 0 }
 
     fun hit(geometry: SunburstGeometry, x: Double, y: Double): Hit? {
         val dx = x - geometry.centerX
@@ -127,7 +130,11 @@ object SunburstLayout {
                 aggregatedSize += child.size
                 continue
             }
-            val color = if (depth == 1) branch++ else parentColor
+            val color = when {
+                depth > 1 -> parentColor
+                child.isSynthetic -> -1
+                else -> branch++
+            }
             out.add(Arc(child, depth, cursor, sweep, color))
             place(child, cursor, sweep, depth + 1, color, config, out)
             cursor += sweep

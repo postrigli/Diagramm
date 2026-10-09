@@ -87,6 +87,20 @@ class SunburstTest {
     }
 
     @Test
+    fun `free and hidden space do not consume colour slots`() {
+        val root = Node.directory("/", "r", listOf(
+            Node.freeSpace(500), Node.file("/a", "a", 300), Node.hiddenSpace(150), Node.file("/b", "b", 50),
+        ))
+        val s = SunburstLayout.layout(root)
+        val byName = s.arcsAt(1).filter { it.node != null }.associateBy { it.node!!.name }
+        assertEquals(-1, byName.getValue("Free space").colorIndex)
+        assertEquals(-1, byName.getValue("Other data").colorIndex)
+        assertEquals(0, byName.getValue("a").colorIndex)
+        assertEquals(1, byName.getValue("b").colorIndex)
+        assertEquals(2, s.branchCount)
+    }
+
+    @Test
     fun `empty folder has no arcs`() {
         val s = SunburstLayout.layout(Node.directory("/", "empty"))
         assertTrue(s.arcs.isEmpty())
