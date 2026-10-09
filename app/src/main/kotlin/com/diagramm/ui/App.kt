@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -56,6 +55,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.diagramm.R
 import com.diagramm.data.StorageAccess
+import com.diagramm.data.UsageAccess
 import com.diagramm.model.Collector
 import com.diagramm.storage.DeleteMode
 
@@ -77,13 +77,23 @@ fun DiagrammApp(
     }
 
     // ---- storage permission ----
-    val hasAccess by rememberStorageAccess()
+    val hasAccess by rememberPermissionCheck(StorageAccess::has)
     var askPermissionFor by remember { mutableStateOf<SourceItem?>(null) }
+    val hasUsageAccess by rememberPermissionCheck(UsageAccess::has)
+    var askUsageFor by remember { mutableStateOf<SourceItem?>(null) }
     val legacyPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     LaunchedEffect(hasAccess) {
         val pending = askPermissionFor
         if (hasAccess && pending != null) {
             askPermissionFor = null
+            vm.startScan(pending)
+        }
+    }
+
+    LaunchedEffect(hasUsageAccess) {
+        val pending = askUsageFor
+        if (hasUsageAccess && pending != null) {
+            askUsageFor = null
             vm.startScan(pending)
         }
     }
@@ -99,7 +109,6 @@ fun DiagrammApp(
                 Screen.HOME -> stringResource(R.string.app_name)
                 Screen.SCANNING -> state.scan?.let { sourceTitle(it.source) }.orEmpty()
                 Screen.EXPLORER -> state.explorer?.let { sourceTitle(it.source) }.orEmpty()
-                Screen.DUPLICATES -> stringResource(R.string.duplicates_title)
                 Screen.TRASH -> stringResource(R.string.trash_title)
             }
             TopAppBar(
@@ -115,9 +124,6 @@ fun DiagrammApp(
                 actions = {
                     when (state.screen) {
                         Screen.EXPLORER -> {
-                            IconButton(onClick = { vm.findDuplicates() }) {
-                                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.duplicates))
-                            }
                             IconButton(onClick = { vm.rescan() }) {
                                 Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.rescan))
                             }
@@ -138,7 +144,11 @@ fun DiagrammApp(
             Screen.HOME -> HomeScreen(
                 sources = state.sources,
                 onScan = { source ->
-                    if (source.type != SourceType.LOCAL || hasAccess) vm.startScan(source) else askPermissionFor = source
+                    when {
+                        source.type == SourceType.LOCAL && !hasAccess -> askPermissionFor = source
+                        source.type == SourceType.APPS && !hasUsageAccess -> askUsageFor = source
+                        else -> vm.startScan(source)
+                    }
                 },
                 onConnect = onConnect,
                 onDisconnect = vm::disconnect,
@@ -147,13 +157,6 @@ fun DiagrammApp(
             )
             Screen.SCANNING -> state.scan?.let { ScanScreen(it, onCancel = { vm.onBack() }, modifier = content) }
             Screen.EXPLORER -> state.explorer?.let { ExplorerScreen(it, vm, onDelete = { showDeleteDialog = true }, modifier = content) }
-            Screen.DUPLICATES -> DuplicatesScreen(
-                ui = state.duplicates,
-                collector = state.explorer?.collector ?: Collector(),
-                onToggle = vm::toggleCollected,
-                onSelectExtra = vm::selectExtraCopies,
-                modifier = content,
-            )
             Screen.TRASH -> state.trash?.let {
                 TrashScreen(it.entries, onRestore = vm::restore, onPurge = vm::purge, modifier = content)
             }
@@ -181,8 +184,33 @@ fun DiagrammApp(
         )
     }
 
+    askUsageFor?.let {
+        AlertDialog(
+            onDismissRequest = { askUsageFor = null },
+            title = { Text(stringResource(R.string.usage_title)) },
+            text = { Text(stringResource(R.string.usage_text)) },
+            confirmButton = {
+                TextButton(onClick = { openUsageAccessSettings(context) }) { Text(stringResource(R.string.perm_grant)) }
+            },
+            dismissButton = { TextButton(onClick = { askUsageFor = null }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+
     val explorer = state.explorer
-    if (showDeleteDialog && explorer != null && !explorer.collector.isEmpty) {
+    if (showDeleteDialog && explorer != null && !explorer.collector.isEmpty && explorer.source.type == SourceType.APPS) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text(stringResource(R.string.apps_uninstall_title, explorer.collector.items.size)) },
+            text = { Text(stringResource(R.string.apps_uninstall_text, fmt(explorer.collector.totalSize))) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    vm.delete(DeleteMode.PERMANENT)
+                }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    } else if (showDeleteDialog && explorer != null && !explorer.collector.isEmpty) {
         DeleteDialog(
             collector = explorer.collector,
             local = explorer.source.type == SourceType.LOCAL,
@@ -272,15 +300,23 @@ private fun openAllFilesSettings(context: Context) {
     }
 }
 
-/** Re-checks the storage permission whenever the app comes back to the foreground (e.g. from Settings). */
+private fun openUsageAccessSettings(context: Context) {
+    try {
+        context.startActivity(UsageAccess.settingsIntent(context))
+    } catch (e: ActivityNotFoundException) {
+        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+    }
+}
+
+/** Re-runs [check] whenever the app comes back to the foreground (e.g. from the Settings screen). */
 @Composable
-private fun rememberStorageAccess(): State<Boolean> {
+private fun rememberPermissionCheck(check: (Context) -> Boolean): State<Boolean> {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
-    val state = remember { mutableStateOf(StorageAccess.has(context)) }
+    val state = remember { mutableStateOf(check(context)) }
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) state.value = StorageAccess.has(context)
+            if (event == Lifecycle.Event.ON_RESUME) state.value = check(context)
         }
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }

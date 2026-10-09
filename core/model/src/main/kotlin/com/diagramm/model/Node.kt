@@ -31,6 +31,11 @@ class Node private constructor(
     val link: String?,
     /** True for folders we were not allowed to read (e.g. Android/data). */
     val accessDenied: Boolean,
+    /**
+     * Free-form marker for special items (see [NodeTags]). Any tagged node is shown in the chart but
+     * cannot be put into the collector.
+     */
+    val tag: String?,
     children: List<Node>,
 ) {
     val children: List<Node> =
@@ -53,6 +58,9 @@ class Node private constructor(
     val isDirectory: Boolean get() = kind == NodeKind.DIRECTORY
     val isFile: Boolean get() = kind == NodeKind.FILE
     val isSynthetic: Boolean get() = kind == NodeKind.FREE_SPACE || kind == NodeKind.HIDDEN_SPACE
+
+    /** Whether the user may add this node to the collector (and so delete it). */
+    val isCollectible: Boolean get() = !isSynthetic && tag == null
 
     /** Size without the free-space children, i.e. what is actually stored. */
     val usedSize: Long get() = size - children.filter { it.kind == NodeKind.FREE_SPACE }.sumOf { it.size }
@@ -89,7 +97,7 @@ class Node private constructor(
     /** Copy of this folder with the given children (kept by identity, not copied). */
     fun withChildren(newChildren: List<Node>): Node {
         check(isDirectory) { "Only directories have children" }
-        return Node(id, name, kind, 0, modifiedMillis, mimeType, checksum, link, accessDenied, newChildren)
+        return Node(id, name, kind, 0, modifiedMillis, mimeType, checksum, link, accessDenied, tag, newChildren)
     }
 
     fun plusChildren(extra: List<Node>): Node = withChildren(children + extra)
@@ -125,7 +133,8 @@ class Node private constructor(
             mimeType: String? = null,
             checksum: String? = null,
             link: String? = null,
-        ) = Node(id, name, NodeKind.FILE, size.coerceAtLeast(0), modifiedMillis, mimeType, checksum, link, false, emptyList())
+            tag: String? = null,
+        ) = Node(id, name, NodeKind.FILE, size.coerceAtLeast(0), modifiedMillis, mimeType, checksum, link, false, tag, emptyList())
 
         fun directory(
             id: String,
@@ -134,12 +143,22 @@ class Node private constructor(
             modifiedMillis: Long = 0,
             link: String? = null,
             accessDenied: Boolean = false,
-        ) = Node(id, name, NodeKind.DIRECTORY, 0, modifiedMillis, null, null, link, accessDenied, children)
+            tag: String? = null,
+        ) = Node(id, name, NodeKind.DIRECTORY, 0, modifiedMillis, null, null, link, accessDenied, tag, children)
 
         fun freeSpace(size: Long, name: String = "Free space") =
-            Node("synthetic:free", name, NodeKind.FREE_SPACE, size.coerceAtLeast(0), 0, null, null, null, false, emptyList())
+            Node("synthetic:free", name, NodeKind.FREE_SPACE, size.coerceAtLeast(0), 0, null, null, null, false, null, emptyList())
 
         fun hiddenSpace(size: Long, name: String = "Other data") =
-            Node("synthetic:hidden", name, NodeKind.HIDDEN_SPACE, size.coerceAtLeast(0), 0, null, null, null, false, emptyList())
+            Node("synthetic:hidden", name, NodeKind.HIDDEN_SPACE, size.coerceAtLeast(0), 0, null, null, null, false, null, emptyList())
     }
+}
+
+/** Well-known values for [Node.tag]. */
+object NodeTags {
+    /** A part of something bigger (an app's code, data or cache): shown, but not deletable on its own. */
+    const val COMPONENT = "component"
+
+    /** A system app: shown, but cannot be uninstalled. */
+    const val SYSTEM_APP = "system-app"
 }

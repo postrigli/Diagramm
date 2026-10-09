@@ -4,6 +4,16 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- "Apps" section: list every installed app, read its size (the user grants Usage access in
+         Settings) and hand uninstall requests to the system. -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
     <!-- Android 11+: needed to read the whole shared storage. Granted by the user in system settings. -->
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"

@@ -64,6 +64,7 @@ fun sourceTitle(source: SourceItem): String = when (source.type) {
         else source.label ?: stringResource(R.string.source_removable)
     SourceType.GDRIVE -> stringResource(R.string.source_gdrive)
     SourceType.YANDEX -> stringResource(R.string.source_yandex)
+    SourceType.APPS -> stringResource(R.string.source_apps)
 }
 
 /** Opens a file in another app: local files through FileProvider, cloud items in the browser. */
@@ -82,6 +83,18 @@ fun openNode(context: Context, node: Node, local: Boolean) {
     } catch (e: ActivityNotFoundException) {
         Toast.makeText(context, R.string.msg_cannot_open, Toast.LENGTH_SHORT).show()
     } catch (e: IllegalArgumentException) {
+        Toast.makeText(context, R.string.msg_cannot_open, Toast.LENGTH_SHORT).show()
+    }
+}
+
+/** Opens Android's own settings page of an app (storage, permissions, uninstall, force stop...). */
+fun openAppSettings(context: Context, packageName: String) {
+    try {
+        context.startActivity(
+            Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    } catch (e: ActivityNotFoundException) {
         Toast.makeText(context, R.string.msg_cannot_open, Toast.LENGTH_SHORT).show()
     }
 }

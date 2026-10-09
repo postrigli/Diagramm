@@ -64,6 +64,8 @@ import com.diagramm.model.FileCategorizer
 import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
 import com.diagramm.model.NodeKind
+import com.diagramm.model.NodeTags
+import com.diagramm.storage.AppsTree
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -84,11 +86,12 @@ fun ExplorerScreen(
     val split = rememberSizeSplitter()
     val current = ex.current
     val isLocal = ex.source.type == SourceType.LOCAL
+    val isApps = ex.source.type == SourceType.APPS
 
     // Layout and category totals walk the whole subtree: keep them off the main thread.
     val data by produceState<ExplorerData?>(null, current) {
         value = withContext(Dispatchers.Default) {
-            ExplorerData(SunburstLayout.layout(current), FileCategorizer.totals(current))
+            ExplorerData(SunburstLayout.layout(current), if (isApps) emptyMap() else FileCategorizer.totals(current))
         }
     }
     val readyData = data?.takeIf { it.sunburst.root === current }
@@ -119,6 +122,15 @@ fun ExplorerScreen(
     }
 
     val listItems: List<Node> = if (ex.category == null) current.children else flat.orEmpty()
+
+    // Package whose settings page the info strip can open (the focused part, or the app we are inside).
+    val appPackage = if (isApps) AppsTree.packageOf((ex.focus ?: current).id) else null
+    val summary = when {
+        isApps && current.parent == null ->
+            stringResource(R.string.apps_count, current.children.size) + " · " + fmt(current.usedSize)
+        isApps -> fmt(current.usedSize)
+        else -> stringResource(R.string.files_count, current.fileCount.toInt()) + " · " + fmt(current.usedSize)
+    }
 
     // colour of each depth-1 child, shared between chart and list
     val colorById: Map<String, Color> = remember(readyData, palette) {
@@ -156,11 +168,16 @@ fun ExplorerScreen(
                         focus = ex.focus,
                         collected = ex.focus?.let { ex.collector.covers(it) } ?: false,
                         isLocal = isLocal,
+                        summary = summary,
                         fmt = fmt,
+                        appPackage = appPackage,
                         onToggle = { ex.focus?.let { vm.toggleCollected(it) } },
                         onOpen = { ex.focus?.let { openNode(context, it, isLocal) } },
+                        onAppSettings = { appPackage?.let { openAppSettings(context, it) } },
                     )
-                    CategoryChips(readyData?.totals.orEmpty(), ex.category, fmt, onSelect = { vm.setCategory(it) })
+                    if (!isApps) {
+                        CategoryChips(readyData?.totals.orEmpty(), ex.category, fmt, onSelect = { vm.setCategory(it) })
+                    }
                     NodeList(
                         nodes = listItems,
                         parent = current,
@@ -168,6 +185,7 @@ fun ExplorerScreen(
                         palette = palette,
                         collector = ex.collector,
                         showPath = ex.category != null,
+                        showFileCount = !isApps,
                         fmt = fmt,
                         onClick = { node ->
                             when {
@@ -253,9 +271,12 @@ private fun InfoStrip(
     focus: Node?,
     collected: Boolean,
     isLocal: Boolean,
+    summary: String,
     fmt: (Long) -> String,
+    appPackage: String?,
     onToggle: () -> Unit,
     onOpen: () -> Unit,
+    onAppSettings: () -> Unit,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -268,11 +289,14 @@ private fun InfoStrip(
         ) {
             if (focus == null) {
                 Text(
-                    stringResource(R.string.files_count, current.fileCount.toInt()) + " · " + fmt(current.usedSize),
+                    summary,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
+                if (appPackage != null) {
+                    TextButton(onClick = onAppSettings) { Text(stringResource(R.string.app_settings)) }
+                }
             } else {
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -287,7 +311,10 @@ private fun InfoStrip(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (!focus.isSynthetic) {
+                if (appPackage != null) {
+                    TextButton(onClick = onAppSettings) { Text(stringResource(R.string.app_settings)) }
+                }
+                if (focus.isCollectible) {
                     if (focus.isFile && (isLocal || focus.link != null)) {
                         TextButton(onClick = onOpen) { Text(stringResource(R.string.action_open)) }
                     }
@@ -334,6 +361,7 @@ private fun NodeList(
     palette: ChartPalette,
     collector: Collector,
     showPath: Boolean,
+    showFileCount: Boolean,
     fmt: (Long) -> String,
     onClick: (Node) -> Unit,
     onToggle: (Node) -> Unit,
@@ -348,14 +376,15 @@ private fun NodeList(
     LazyColumn(modifier) {
         items(nodes, key = { it.id }) { node ->
             val contained = collector.contains(node)
-            val covered = contained || (!node.isSynthetic && collector.covers(node))
+            val covered = contained || (node.isCollectible && collector.covers(node))
             NodeRow(
                 node = node,
                 color = colorById[node.id] ?: palette.smallObjects,
                 parentSize = parent.size,
                 checked = covered,
-                checkEnabled = !node.isSynthetic && (contained || !covered),
+                checkEnabled = node.isCollectible && (contained || !covered),
                 showPath = showPath,
+                showFileCount = showFileCount,
                 fmt = fmt,
                 onClick = { onClick(node) },
                 onToggle = { onToggle(node) },
@@ -372,6 +401,7 @@ private fun NodeRow(
     checked: Boolean,
     checkEnabled: Boolean,
     showPath: Boolean,
+    showFileCount: Boolean,
     fmt: (Long) -> String,
     onClick: () -> Unit,
     onToggle: () -> Unit,
@@ -390,7 +420,9 @@ private fun NodeRow(
             val subtitle = when {
                 node.accessDenied -> stringResource(R.string.access_denied)
                 showPath -> node.parent?.let { nodeTitle(it) }.orEmpty() + " · " + percent(node.size, parentSize)
-                node.isDirectory -> stringResource(R.string.files_count, node.fileCount.toInt()) + " · " + percent(node.size, parentSize)
+                node.tag == NodeTags.SYSTEM_APP -> stringResource(R.string.system_app) + " · " + percent(node.size, parentSize)
+                node.isDirectory && showFileCount ->
+                    stringResource(R.string.files_count, node.fileCount.toInt()) + " · " + percent(node.size, parentSize)
                 else -> percent(node.size, parentSize)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -408,7 +440,7 @@ private fun NodeRow(
             }
         }
         Text(fmt(node.size), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-        if (node.isSynthetic) {
+        if (!node.isCollectible) {
             Spacer(Modifier.width(48.dp))
         } else {
             Checkbox(checked = checked, onCheckedChange = { onToggle() }, enabled = checkEnabled)

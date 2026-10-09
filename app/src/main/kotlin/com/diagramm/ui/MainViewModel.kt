@@ -13,11 +13,9 @@ import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
 import com.diagramm.model.NodeKind
 import com.diagramm.net.AuthRequiredException
+import com.diagramm.storage.AppsTree
 import com.diagramm.storage.DeleteMode
 import com.diagramm.storage.DeleteResult
-import com.diagramm.storage.DuplicateFinder
-import com.diagramm.storage.DuplicateGroup
-import com.diagramm.storage.LocalContentHasher
 import com.diagramm.storage.ScanProgress
 import com.diagramm.storage.StorageProvider
 import com.diagramm.storage.StorageQuota
@@ -46,7 +44,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
     val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
 
     private var scanJob: Job? = null
-    private var duplicatesJob: Job? = null
+
+    private val _uninstallRequests = MutableSharedFlow<List<String>>(extraBufferCapacity = 4)
+
+    /** Package names the activity should hand to the system uninstaller, one dialog after another. */
+    val uninstallRequests: SharedFlow<List<String>> = _uninstallRequests.asSharedFlow()
 
     init {
         refreshSources()
@@ -65,13 +67,14 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 quota = StorageQuota(v.root.totalSpace, (v.root.totalSpace - v.root.freeSpace).coerceAtLeast(0)),
             )
         }
+        val apps = SourceItem("apps", SourceType.APPS)
         val google = SourceItem("gdrive", SourceType.GDRIVE, connected = container.googleAuth.connected.value)
         val yandex = SourceItem(
             "yandex", SourceType.YANDEX,
             connected = container.yandexAuth.connected.value,
             configured = container.yandexAuth.isConfigured,
         )
-        _state.update { it.copy(sources = locals + google + yandex) }
+        _state.update { it.copy(sources = locals + apps + google + yandex) }
 
         viewModelScope.launch {
             // Trash sizes of local volumes
@@ -110,7 +113,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         when (type) {
             SourceType.GDRIVE -> container.googleAuth.disconnect()
             SourceType.YANDEX -> container.yandexAuth.disconnect()
-            SourceType.LOCAL -> Unit
+            SourceType.LOCAL, SourceType.APPS -> Unit
         }
         refreshSources()
     }
@@ -123,6 +126,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         SourceType.LOCAL -> container.localProvider(source.id, source.label.orEmpty(), File(source.rootPath!!))
         SourceType.GDRIVE -> container.googleProvider()
         SourceType.YANDEX -> container.yandexProvider()
+        SourceType.APPS -> container.appsProvider()
     }
 
     // ---- scanning ------------------------------------------------------------------------------
@@ -174,7 +178,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun toHome() {
-        _state.update { it.copy(screen = Screen.HOME, scan = null, explorer = null, duplicates = null, trash = null) }
+        _state.update { it.copy(screen = Screen.HOME, scan = null, explorer = null, trash = null) }
         refreshSources()
     }
 
@@ -193,10 +197,6 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 val ex = st.explorer
                 val parent = ex?.current?.parent
                 if (ex != null && parent != null) navigateTo(parent) else toHome()
-            }
-            Screen.DUPLICATES -> {
-                duplicatesJob?.cancel()
-                _state.update { it.copy(screen = Screen.EXPLORER, duplicates = null) }
             }
             Screen.TRASH -> toHome()
         }
@@ -232,6 +232,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         val ex = _state.value.explorer ?: return
         val items = ex.collector.items
         if (items.isEmpty() || _state.value.deleting) return
+        if (ex.source.type == SourceType.APPS) {
+            // Apps cannot be removed silently: the system shows its own confirmation for each one.
+            _uninstallRequests.tryEmit(items.mapNotNull { AppsTree.packageOf(it.id) })
+            return
+        }
         viewModelScope.launch {
             _state.update { it.copy(deleting = true) }
             val result: DeleteResult = try {
@@ -271,36 +276,15 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         return withChildren(children - free + Node.freeSpace(free.size + bytes))
     }
 
-    // ---- duplicates ----------------------------------------------------------------------------
-
-    fun findDuplicates() {
-        val ex = _state.value.explorer ?: return
-        duplicatesJob?.cancel()
-        _state.update { it.copy(screen = Screen.DUPLICATES, duplicates = DuplicatesUi.Loading) }
-        duplicatesJob = viewModelScope.launch {
-            val hasher = if (ex.source.type == SourceType.LOCAL) LocalContentHasher() else null
-            val groups = try {
-                withContext(Dispatchers.Default) { DuplicateFinder(hasher).find(ex.current, minSizeBytes = 1024) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                emptyList()
-            }
-            _state.update { it.copy(duplicates = DuplicatesUi.Ready(groups)) }
-        }
-    }
-
-    /** Puts every copy except the oldest one of each group into the collector and returns to the chart. */
-    fun selectExtraCopies(groups: List<DuplicateGroup>) {
+    /** Called after the system uninstaller really removed these packages. */
+    fun onAppsRemoved(packages: Collection<String>) {
+        val ids = packages.mapTo(HashSet()) { AppsTree.appId(it) }
         updateExplorer { ex ->
-            var c = ex.collector
-            for (g in groups) {
-                val keep = g.nodes.minWithOrNull(compareBy<Node> { if (it.modifiedMillis > 0) it.modifiedMillis else Long.MAX_VALUE }.thenBy { it.id.length })
-                for (n in g.nodes) if (n !== keep) c = c.plus(n)
-            }
-            ex.copy(collector = c)
+            if (ex.source.type != SourceType.APPS) return@updateExplorer ex
+            val newRoot = ex.root.removing(ids)
+            val newCurrent = newRoot.findById(ex.current.id) ?: newRoot
+            ex.copy(root = newRoot, current = newCurrent, collector = ex.collector.minusIds(ids), focus = null)
         }
-        _state.update { it.copy(screen = Screen.EXPLORER, duplicates = null) }
     }
 
     // ---- local trash ---------------------------------------------------------------------------

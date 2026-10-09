@@ -41,7 +41,6 @@
     <!-- Explorer -->
     <string name="back">Назад</string>
     <string name="rescan">Пересканировать</string>
-    <string name="duplicates">Дубликаты</string>
     <string name="free_space">Свободно</string>
     <string name="hidden_space">Прочие данные (система, скрытое)</string>
     <string name="smaller_objects">Мелкие объекты</string>
@@ -74,12 +73,6 @@
     <string name="delete_opt_permanent">Удалить навсегда (без возможности восстановления)</string>
     <string name="deleting">Удаление…</string>
 
-    <!-- Duplicates -->
-    <string name="duplicates_title">Дубликаты файлов</string>
-    <string name="duplicates_searching">Ищем дубликаты…</string>
-    <string name="duplicates_none">Дубликатов не найдено</string>
-    <string name="duplicates_group">Копий: %1$d · лишних %2$s</string>
-    <string name="duplicates_select_extra">Выбрать лишние копии</string>
 
     <!-- Trash -->
     <string name="trash_title">Корзина Diagramm</string>
@@ -97,4 +90,19 @@
     <string name="msg_unknown_error">неизвестная ошибка</string>
     <string name="msg_cannot_open">Нет приложения для открытия файла</string>
     <string name="msg_connect_failed">Не удалось подключить: %1$s</string>
+
+    <!-- Apps -->
+    <string name="source_apps">Приложения</string>
+    <string name="apps_subtitle">Размер приложений, их данных и кэша</string>
+    <string name="apps_part_code">Приложение и библиотеки</string>
+    <string name="apps_part_data">Данные</string>
+    <string name="apps_part_cache">Кэш</string>
+    <string name="system_app">Системное приложение</string>
+    <string name="apps_count">Приложений: %1$d</string>
+    <string name="scanning_stats_apps">Приложений: %1$d · %2$s</string>
+    <string name="app_settings">Настройки приложения</string>
+    <string name="usage_title">Доступ к данным об использовании</string>
+    <string name="usage_text">Чтобы измерить размер приложений, Android требует для Diagramm разрешение \"Доступ к данным об использовании\". Данные не покидают устройство.</string>
+    <string name="apps_uninstall_title">Удалить приложений: %1$d?</string>
+    <string name="apps_uninstall_text">Android попросит подтвердить удаление каждого приложения. Освободится до %1$s (приложения и их данные).</string>
 </resources>

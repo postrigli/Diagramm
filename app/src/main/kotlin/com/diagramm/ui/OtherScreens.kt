@@ -1,6 +1,5 @@
 package com.diagramm.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -29,9 +26,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.diagramm.R
-import com.diagramm.model.Collector
-import com.diagramm.model.Node
-import com.diagramm.storage.DuplicateGroup
 import com.diagramm.storage.TrashEntry
 
 @Composable
@@ -50,7 +44,10 @@ fun ScanScreen(scan: ScanUi, onCancel: () -> Unit, modifier: Modifier = Modifier
             modifier = Modifier.padding(top = 24.dp),
         )
         Text(
-            stringResource(R.string.scanning_stats, scan.files, fmt(scan.bytes)),
+            stringResource(
+                if (scan.source.type == SourceType.APPS) R.string.scanning_stats_apps else R.string.scanning_stats,
+                scan.files, fmt(scan.bytes),
+            ),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(top = 8.dp),
@@ -72,76 +69,6 @@ fun ScanScreen(scan: ScanUi, onCancel: () -> Unit, modifier: Modifier = Modifier
         )
         OutlinedButton(onClick = onCancel, modifier = Modifier.padding(top = 24.dp)) {
             Text(stringResource(R.string.cancel))
-        }
-    }
-}
-
-@Composable
-fun DuplicatesScreen(
-    ui: DuplicatesUi?,
-    collector: Collector,
-    onToggle: (Node) -> Unit,
-    onSelectExtra: (List<DuplicateGroup>) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val fmt = rememberSizeFormatter()
-    when (ui) {
-        null, DuplicatesUi.Loading -> Column(
-            modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            CircularProgressIndicator()
-            Text(stringResource(R.string.duplicates_searching), modifier = Modifier.padding(top = 16.dp))
-        }
-        is DuplicatesUi.Ready -> {
-            if (ui.groups.isEmpty()) {
-                Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(stringResource(R.string.duplicates_none), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                return
-            }
-            LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-                item {
-                    Button(
-                        onClick = { onSelectExtra(ui.groups) },
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    ) { Text(stringResource(R.string.duplicates_select_extra)) }
-                }
-                items(ui.groups, key = { g -> g.nodes.first().id }) { group ->
-                    Column {
-                        Text(
-                            stringResource(R.string.duplicates_group, group.nodes.size, fmt(group.wastedBytes)),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp),
-                        )
-                        for (node in group.nodes) {
-                            val contained = collector.contains(node)
-                            val covered = contained || collector.covers(node)
-                            Row(
-                                Modifier.fillMaxWidth().clickable(enabled = contained || !covered) { onToggle(node) }
-                                    .padding(start = 16.dp, end = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(node.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text(
-                                        node.parent?.id ?: node.id,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Text(fmt(node.size), style = MaterialTheme.typography.bodyMedium)
-                                Checkbox(checked = covered, onCheckedChange = { onToggle(node) }, enabled = contained || !covered)
-                            }
-                        }
-                        HorizontalDivider(Modifier.padding(top = 8.dp))
-                    }
-                }
-            }
         }
     }
 }

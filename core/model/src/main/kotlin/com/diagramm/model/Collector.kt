@@ -20,7 +20,7 @@ class Collector private constructor(val items: List<Node>) {
     fun contains(node: Node): Boolean = items.any { it.id == node.id }
 
     fun plus(node: Node): Collector {
-        if (node.isSynthetic || covers(node)) return this
+        if (!node.isCollectible || covers(node)) return this
         val remaining = items.filterNot { it.isDescendantOf(node) }
         return Collector(remaining + node)
     }

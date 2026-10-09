@@ -49,4 +49,17 @@ class CollectorTest {
         assertEquals(setOf("/b"), c.ids)
         assertTrue(c.toggle(b).isEmpty)
     }
+
+    @Test
+    fun `tagged nodes cannot be collected`() {
+        val app = Node.directory(
+            "app:x", "X",
+            listOf(Node.file("app:x#cache", "Cache", 10, tag = NodeTags.COMPONENT)),
+        )
+        val system = Node.directory("app:sys", "Sys", emptyList(), tag = NodeTags.SYSTEM_APP)
+        val tree = Node.directory("/", "apps", listOf(app, system))
+        assertTrue(Collector().plus(tree.findById("app:x#cache")!!).isEmpty)
+        assertTrue(Collector().plus(tree.findById("app:sys")!!).isEmpty)
+        assertEquals(1, Collector().plus(tree.findById("app:x")!!).items.size)
+    }
 }

@@ -68,7 +68,7 @@ private fun SourceCard(
     onDisconnect: (SourceType) -> Unit,
     onOpenTrash: (SourceItem) -> Unit,
 ) {
-    val cloud = source.type != SourceType.LOCAL
+    val cloud = source.type == SourceType.GDRIVE || source.type == SourceType.YANDEX
     val quota = source.quota
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -78,6 +78,7 @@ private fun SourceCard(
             Text(sourceTitle(source), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
             val subtitle = when {
+                source.type == SourceType.APPS -> stringResource(R.string.apps_subtitle)
                 !source.configured -> stringResource(R.string.yandex_not_configured)
                 cloud && !source.connected -> stringResource(R.string.not_connected)
                 quota?.totalBytes != null -> stringResource(R.string.used_of, fmt(quota.usedBytes), fmt(quota.totalBytes!!))

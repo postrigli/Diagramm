@@ -41,7 +41,6 @@
     <!-- Explorer -->
     <string name="back">Back</string>
     <string name="rescan">Rescan</string>
-    <string name="duplicates">Duplicates</string>
     <string name="free_space">Free space</string>
     <string name="hidden_space">Other data (system, hidden)</string>
     <string name="smaller_objects">Smaller objects</string>
@@ -74,12 +73,6 @@
     <string name="delete_opt_permanent">Delete permanently (cannot be undone)</string>
     <string name="deleting">Deleting…</string>
 
-    <!-- Duplicates -->
-    <string name="duplicates_title">Duplicate files</string>
-    <string name="duplicates_searching">Looking for duplicates…</string>
-    <string name="duplicates_none">No duplicates found</string>
-    <string name="duplicates_group">%1$d copies · %2$s wasted</string>
-    <string name="duplicates_select_extra">Select extra copies</string>
 
     <!-- Trash -->
     <string name="trash_title">Diagramm trash</string>
@@ -97,4 +90,19 @@
     <string name="msg_unknown_error">unknown error</string>
     <string name="msg_cannot_open">No app can open this file</string>
     <string name="msg_connect_failed">Could not connect: %1$s</string>
+
+    <!-- Apps -->
+    <string name="source_apps">Apps</string>
+    <string name="apps_subtitle">Size of apps, their data and cache</string>
+    <string name="apps_part_code">App and libraries</string>
+    <string name="apps_part_data">Data</string>
+    <string name="apps_part_cache">Cache</string>
+    <string name="system_app">System app</string>
+    <string name="apps_count">%1$d apps</string>
+    <string name="scanning_stats_apps">%1$d apps · %2$s</string>
+    <string name="app_settings">App settings</string>
+    <string name="usage_title">Usage access</string>
+    <string name="usage_text">To measure app sizes Android requires the \"Usage access\" permission for Diagramm. Nothing leaves your device.</string>
+    <string name="apps_uninstall_title">Uninstall %1$d apps?</string>
+    <string name="apps_uninstall_text">Android will ask you to confirm each one. Up to %1$s will be freed (apps and their data).</string>
 </resources>

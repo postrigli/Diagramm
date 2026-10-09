@@ -3,11 +3,10 @@ package com.diagramm.ui
 import com.diagramm.model.Collector
 import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
-import com.diagramm.storage.DuplicateGroup
 import com.diagramm.storage.StorageQuota
 import com.diagramm.storage.TrashEntry
 
-enum class SourceType { LOCAL, GDRIVE, YANDEX }
+enum class SourceType { LOCAL, GDRIVE, YANDEX, APPS }
 
 data class SourceItem(
     val id: String,
@@ -22,7 +21,7 @@ data class SourceItem(
     val configured: Boolean = true,
 )
 
-enum class Screen { HOME, SCANNING, EXPLORER, DUPLICATES, TRASH }
+enum class Screen { HOME, SCANNING, EXPLORER, TRASH }
 
 data class ScanUi(
     val source: SourceItem,
@@ -44,11 +43,6 @@ data class ExplorerState(
     val category: FileCategory? = null,
 )
 
-sealed interface DuplicatesUi {
-    data object Loading : DuplicatesUi
-    data class Ready(val groups: List<DuplicateGroup>) : DuplicatesUi
-}
-
 data class TrashUi(val source: SourceItem, val entries: List<TrashEntry>)
 
 data class AppState(
@@ -56,7 +50,6 @@ data class AppState(
     val screen: Screen = Screen.HOME,
     val scan: ScanUi? = null,
     val explorer: ExplorerState? = null,
-    val duplicates: DuplicatesUi? = null,
     val trash: TrashUi? = null,
     val deleting: Boolean = false,
 )

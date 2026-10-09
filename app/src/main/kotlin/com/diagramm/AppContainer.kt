@@ -3,6 +3,7 @@ package com.diagramm
 import android.content.Context
 import com.diagramm.auth.GoogleAuth
 import com.diagramm.auth.YandexAuth
+import com.diagramm.data.InstalledAppsProvider
 import com.diagramm.data.LocalVolume
 import com.diagramm.data.LocalVolumes
 import com.diagramm.data.SecureStore
@@ -34,6 +35,8 @@ class AppContainer(private val context: Context) {
 
     fun localProvider(id: String, name: String, root: File): StorageProvider =
         LocalStorageProvider(id = id, displayName = name, root = root, isVolumeRoot = true, trash = trashFor(root))
+
+    fun appsProvider(): StorageProvider = InstalledAppsProvider(context)
 
     fun googleProvider(): StorageProvider = GoogleDriveProvider(
         AuthorizedHttp(httpClient, AccessTokenProvider { googleAuth.silentToken() }),

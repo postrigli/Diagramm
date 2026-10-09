@@ -1,7 +1,10 @@
 package com.diagramm
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -32,9 +35,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Uninstalling is a system dialog per app: run them one after another and report what really went.
+    private val uninstallQueue = ArrayDeque<String>()
+    private var currentUninstall: String? = null
+    private val uninstallLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        currentUninstall?.let { pkg -> if (!isInstalled(pkg)) vm.onAppsRemoved(listOf(pkg)) }
+        currentUninstall = null
+        launchNextUninstall()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycleScope.launch { vm.uninstallRequests.collect { startUninstall(it) } }
         handleRedirect(intent)
         setContent {
             DiagrammTheme {
@@ -72,7 +85,33 @@ class MainActivity : ComponentActivity() {
             SourceType.YANDEX -> if (container.yandexAuth.isConfigured) {
                 startActivity(Intent(Intent.ACTION_VIEW, container.yandexAuth.authorizeUri()))
             }
-            SourceType.LOCAL -> Unit
+            SourceType.LOCAL, SourceType.APPS -> Unit
         }
+    }
+
+    private fun startUninstall(packages: List<String>) {
+        uninstallQueue.addAll(packages)
+        if (currentUninstall == null) launchNextUninstall()
+    }
+
+    private fun launchNextUninstall() {
+        val pkg = uninstallQueue.removeFirstOrNull() ?: return
+        currentUninstall = pkg
+        val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg"))
+            .putExtra(Intent.EXTRA_RETURN_RESULT, true)
+        try {
+            uninstallLauncher.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            currentUninstall = null
+            launchNextUninstall()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun isInstalled(pkg: String): Boolean = try {
+        packageManager.getPackageInfo(pkg, 0)
+        true
+    } catch (e: PackageManager.NameNotFoundException) {
+        false
     }
 }
