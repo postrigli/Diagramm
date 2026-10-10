@@ -43,6 +43,10 @@
     <string name="rescan">Пересканировать</string>
     <string name="free_space">Свободно</string>
     <string name="hidden_space">Прочие данные (система, скрытое)</string>
+    <string name="small_objects">Мелкие объекты</string>
+    <string name="small_apps">Мелкие приложения</string>
+    <string name="system_apps">Системные приложения</string>
+    <string name="hidden_google">Сервисы Google (Фото, Gmail и др.)</string>
     <string name="files_count">Файлов: %1$d</string>
     <string name="access_denied">Нет доступа</string>
     <string name="collected">собрано</string>

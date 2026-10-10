@@ -150,12 +150,26 @@ fun ExplorerScreen(
     // text shown inside sectors (resolved here because string resources need a composable scope)
     val freeLabel = stringResource(R.string.free_space)
     val hiddenLabel = stringResource(R.string.hidden_space)
-    val labelText: (Node) -> String = remember(freeLabel, hiddenLabel) {
+    val googleLabel = stringResource(R.string.hidden_google)
+    val systemAppsLabel = stringResource(R.string.system_apps)
+    val smallAppsLabel = stringResource(R.string.small_apps)
+    val smallObjectsLabel = stringResource(R.string.small_objects)
+    val labelText: (Node) -> String = remember(freeLabel, hiddenLabel, googleLabel) {
         { node ->
             when (node.kind) {
                 NodeKind.FREE_SPACE -> freeLabel
-                NodeKind.HIDDEN_SPACE -> hiddenLabel
+                NodeKind.HIDDEN_SPACE -> if (node.tag == NodeTags.GOOGLE_SERVICES) googleLabel else hiddenLabel
                 else -> node.name
+            }
+        }
+    }
+    // The grey "smaller objects" sector: in the Apps chart it is mostly tiny apps, and says so when all are system ones.
+    val aggregatedText: (List<Node>) -> String = remember(isApps, systemAppsLabel, smallAppsLabel, smallObjectsLabel) {
+        { members ->
+            when {
+                !isApps -> smallObjectsLabel
+                members.isNotEmpty() && members.all { it.tag == NodeTags.SYSTEM_APP } -> systemAppsLabel
+                else -> smallAppsLabel
             }
         }
     }
@@ -195,6 +209,7 @@ fun ExplorerScreen(
                     centerTitle = fmt(shown.usedSize),
                     centerSubtitle = if (byCache) cacheTitle else nodeTitle(current),
                     labelText = labelText,
+                    aggregatedText = aggregatedText,
                     sizeText = fmt,
                     onArc = { arc -> onArcTapped(arc, vm) },
                     onCenter = { vm.navigateUp() },

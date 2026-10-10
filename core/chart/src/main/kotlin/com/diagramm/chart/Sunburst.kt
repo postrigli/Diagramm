@@ -44,8 +44,11 @@ data class SunburstGeometry(
     fun midRadius(depth: Int): Double = (innerRadius(depth) + outerRadius(depth)) / 2
 
     companion object {
+        /** Share of the chart radius taken by the hub; sized so the centre text fits inside it. */
+        const val HUB_FRACTION = 0.3
+
         /** Fits the chart into a [width] x [height] box. */
-        fun fit(width: Double, height: Double, maxDepth: Int, hubFraction: Double = 0.24): SunburstGeometry {
+        fun fit(width: Double, height: Double, maxDepth: Int, hubFraction: Double = HUB_FRACTION): SunburstGeometry {
             val half = minOf(width, height) / 2
             val hub = half * hubFraction
             return SunburstGeometry(width / 2, height / 2, hub, (half - hub) / maxDepth)

@@ -48,10 +48,13 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.diagramm.chart.Arc
 import com.diagramm.chart.Hit
+import com.diagramm.chart.LabelOrientation
 import com.diagramm.chart.LabelPlacer
 import com.diagramm.chart.Sunburst
 import com.diagramm.chart.SunburstGeometry
@@ -69,6 +72,7 @@ private const val MAX_ZOOM = 12f
  * the name and size inside every sector that is big enough at the current zoom.
  *
  * @param labelText text shown for a node in its sector (localised for free/hidden space)
+ * @param aggregatedText text shown in the grey sector that merges many small objects
  */
 @Composable
 fun SunburstChart(
@@ -79,6 +83,7 @@ fun SunburstChart(
     centerTitle: String,
     centerSubtitle: String,
     labelText: (Node) -> String,
+    aggregatedText: (List<Node>) -> String,
     sizeText: (Long) -> String,
     onArc: (Arc) -> Unit,
     onCenter: () -> Unit,
@@ -104,6 +109,7 @@ fun SunburstChart(
     val currentOnArc by rememberUpdatedState(onArc)
     val currentOnCenter by rememberUpdatedState(onCenter)
     val currentLabelText by rememberUpdatedState(labelText)
+    val currentAggregatedText by rememberUpdatedState(aggregatedText)
     val currentSizeText by rememberUpdatedState(sizeText)
     val focusColor = MaterialTheme.colorScheme.onBackground
     val collectColor = MaterialTheme.colorScheme.error
@@ -177,15 +183,17 @@ fun SunburstChart(
                     if (t > 0.6f) {
                         drawLabels(
                             sunburst, g, palette, zoom, pan, center, textMeasurer, placer,
-                            nameStyle, sizeStyle, currentLabelText, currentSizeText, t,
+                            nameStyle, sizeStyle, currentLabelText, currentAggregatedText, currentSizeText, t,
                         )
                     }
                 }
             }
+            // The hub is a circle of HUB_FRACTION of the chart radius; text must stay inside its inscribed box.
+            val hubTextWidth = side * (SunburstGeometry.HUB_FRACTION.toFloat() * 0.80f)
             Column(
                 Modifier
                     .align(Alignment.Center)
-                    .width(side * 0.44f)
+                    .width(hubTextWidth)
                     .graphicsLayer {
                         scaleX = zoom
                         scaleY = zoom
@@ -194,21 +202,17 @@ fun SunburstChart(
                     },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text(
-                    centerTitle,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                FitText(
+                    centerTitle, hubTextWidth, textMeasurer,
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    minSize = 10.sp, maxLines = 1,
                     color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    textAlign = TextAlign.Center,
                 )
-                Text(
-                    centerSubtitle,
+                FitText(
+                    centerSubtitle, hubTextWidth, textMeasurer,
                     style = MaterialTheme.typography.bodySmall,
+                    minSize = 8.sp, maxLines = 2,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
                 )
             }
             if (zoom > 1.02f) {
@@ -303,51 +307,177 @@ private fun DrawScope.drawLabels(
     nameStyle: TextStyle,
     sizeStyle: TextStyle,
     labelText: (Node) -> String,
+    aggregatedText: (List<Node>) -> String,
     sizeText: (Long) -> String,
     alpha: Float,
 ) {
     val margin = 40.dp.toPx()
+    val origin = center + pan
+    val lineHeight = placer.lineHeightPx.toFloat()
     for (arc in sb.arcs) {
-        val node = arc.node ?: continue
-
         // Cheap cull first: skip sectors whose centre is far outside the visible area.
         val mid = Math.toRadians(arc.startAngle + arc.sweepAngle / 2)
         val rMid = g.midRadius(arc.depth)
-        val sx = center.x + pan.x + (zoom * rMid * sin(mid)).toFloat()
-        val sy = center.y + pan.y - (zoom * rMid * cos(mid)).toFloat()
+        val sx = origin.x + (zoom * rMid * sin(mid)).toFloat()
+        val sy = origin.y - (zoom * rMid * cos(mid)).toFloat()
         if (sx < -margin || sx > size.width + margin || sy < -margin || sy > size.height + margin) continue
 
-        val name = labelText(node)
-        val sizeLabel = sizeText(node.size)
+        val node = arc.node
+        val name = if (node != null) labelText(node) else aggregatedText(arc.aggregated)
+        val sizeLabel = sizeText(node?.size ?: arc.aggregatedSize)
         val placement = placer.place(
             arc, g, zoom.toDouble(),
             nameWidth = { measurer.measure(name, nameStyle).size.width.toDouble() },
             sizeWidth = { measurer.measure(sizeLabel, sizeStyle).size.width.toDouble() },
         ) ?: continue
 
-        val maxWidth = placement.maxWidthPx.toInt().coerceAtLeast(1)
-        val constraints = Constraints(maxWidth = maxWidth)
-        val nameLayout = measurer.measure(
-            name, nameStyle, overflow = TextOverflow.Ellipsis, maxLines = 1, constraints = constraints,
-        )
-        val sizeLayout = if (placement.twoLines) {
-            measurer.measure(sizeLabel, sizeStyle, overflow = TextOverflow.Ellipsis, maxLines = 1, constraints = constraints)
-        } else {
-            null
-        }
-
         val textColor = textColorOn(palette.arc(arc)).copy(alpha = alpha)
-        val blockHeight = nameLayout.size.height + (sizeLayout?.size?.height ?: 0)
-        val topY = sy - blockHeight / 2f
-        rotate(placement.rotationDegrees.toFloat(), pivot = Offset(sx, sy)) {
-            drawText(nameLayout, color = textColor, topLeft = Offset(sx - nameLayout.size.width / 2f, topY))
-            if (sizeLayout != null) {
-                drawText(
-                    sizeLayout,
-                    color = textColor.copy(alpha = 0.85f * alpha),
-                    topLeft = Offset(sx - sizeLayout.size.width / 2f, topY + nameLayout.size.height),
+        val sizeColor = textColor.copy(alpha = 0.85f * alpha)
+        // Leave a little air on both ends so even the widest glyphs stay clear of the sector's edges.
+        val maxWidth = (placement.maxWidthPx * TEXT_FILL).toFloat()
+
+        when (placement.orientation) {
+            LabelOrientation.ALONG_RADIUS -> {
+                val constraints = Constraints(maxWidth = maxWidth.toInt().coerceAtLeast(1))
+                val nameLayout = measurer.measure(
+                    name, nameStyle, overflow = TextOverflow.Ellipsis, maxLines = 1, constraints = constraints,
                 )
+                val sizeLayout = if (placement.twoLines) {
+                    measurer.measure(sizeLabel, sizeStyle, overflow = TextOverflow.Ellipsis, maxLines = 1, constraints = constraints)
+                } else {
+                    null
+                }
+                val blockHeight = nameLayout.size.height + (sizeLayout?.size?.height ?: 0)
+                val topY = sy - blockHeight / 2f
+                rotate(placement.rotationDegrees.toFloat(), pivot = Offset(sx, sy)) {
+                    drawText(nameLayout, color = textColor, topLeft = Offset(sx - nameLayout.size.width / 2f, topY))
+                    if (sizeLayout != null) {
+                        drawText(
+                            sizeLayout,
+                            color = sizeColor,
+                            topLeft = Offset(sx - sizeLayout.size.width / 2f, topY + nameLayout.size.height),
+                        )
+                    }
+                }
+            }
+
+            LabelOrientation.ALONG_RING -> {
+                // Lower half of the chart: text runs counter-clockwise with its top toward the centre, so it
+                // never reads upside down; the first line is then the inner one.
+                val lower = cos(mid) < 0
+                val r = zoom * placement.radius.toFloat()
+                val nameRadius: Float
+                val sizeRadius: Float
+                if (placement.twoLines) {
+                    nameRadius = if (lower) r - lineHeight / 2 else r + lineHeight / 2
+                    sizeRadius = if (lower) r + lineHeight / 2 else r - lineHeight / 2
+                } else {
+                    nameRadius = r
+                    sizeRadius = r
+                }
+                drawBentText(measurer, name, nameStyle, origin, nameRadius, placement.angleDegrees, lower, maxWidth, textColor, margin)
+                if (placement.twoLines) {
+                    drawBentText(measurer, sizeLabel, sizeStyle, origin, sizeRadius, placement.angleDegrees, lower, maxWidth, sizeColor, margin)
+                }
             }
         }
     }
 }
+
+/** Shortest prefix-with-ellipsis of [text] whose glyph advances fit [maxWidth]; also returns those advances. */
+private fun fitGlyphs(measurer: TextMeasurer, text: String, style: TextStyle, maxWidth: Float): Pair<String, List<Float>> {
+    fun advances(t: String) = t.map { measurer.measure(it.toString(), style).size.width.toFloat() }
+    val full = advances(text)
+    if (full.sum() <= maxWidth) return text to full
+    val dots = measurer.measure("…", style).size.width.toFloat()
+    var used = dots
+    var count = 0
+    while (count < text.length && used + full[count] <= maxWidth) {
+        used += full[count]
+        count++
+    }
+    val shown = text.take(count).trimEnd()
+    if (shown.isEmpty()) return "" to emptyList()
+    val result = "$shown…"
+    return result to advances(result)
+}
+
+/**
+ * Draws [text] bent along the circle of [radius] around [origin], centred on [angleDegrees] (clockwise from
+ * 12 o'clock). With [lower] the text runs counter-clockwise and is turned over so it stays readable.
+ */
+private fun DrawScope.drawBentText(
+    measurer: TextMeasurer,
+    text: String,
+    style: TextStyle,
+    origin: Offset,
+    radius: Float,
+    angleDegrees: Double,
+    lower: Boolean,
+    maxWidth: Float,
+    color: Color,
+    cullMargin: Float,
+) {
+    if (radius <= 0f) return
+    val (shown, advances) = fitGlyphs(measurer, text, style, maxWidth)
+    if (shown.isEmpty()) return
+    val total = advances.sum()
+    val direction = if (lower) -1.0 else 1.0
+    var offset = -total / 2f
+    for (i in shown.indices) {
+        val advance = advances[i]
+        val centreOffset = offset + advance / 2f
+        offset += advance
+        if (shown[i].isWhitespace()) continue
+        val theta = angleDegrees + direction * Math.toDegrees((centreOffset / radius).toDouble())
+        val rad = Math.toRadians(theta)
+        val px = origin.x + (radius * sin(rad)).toFloat()
+        val py = origin.y - (radius * cos(rad)).toFloat()
+        if (px < -cullMargin || px > size.width + cullMargin || py < -cullMargin || py > size.height + cullMargin) continue
+        val glyph = measurer.measure(shown[i].toString(), style)
+        rotate((if (lower) theta + 180.0 else theta).toFloat(), pivot = Offset(px, py)) {
+            drawText(
+                glyph,
+                color = color,
+                topLeft = Offset(px - glyph.size.width / 2f, py - glyph.size.height / 2f),
+            )
+        }
+    }
+}
+
+/** Single-line / two-line text that shrinks its font until it fits [maxWidth], never going below [minSize]. */
+@Composable
+private fun FitText(
+    text: String,
+    maxWidth: Dp,
+    measurer: TextMeasurer,
+    style: TextStyle,
+    minSize: TextUnit,
+    maxLines: Int,
+    color: Color,
+) {
+    val density = LocalDensity.current
+    val widthPx = with(density) { maxWidth.roundToPx() }
+    val fitted = remember(text, widthPx, style, minSize, maxLines) {
+        var size = style.fontSize.value
+        val floor = minSize.value
+        var current = style
+        while (true) {
+            current = style.copy(fontSize = size.sp)
+            val layout = measurer.measure(
+                text, current, maxLines = maxLines, softWrap = maxLines > 1,
+                constraints = Constraints(maxWidth = widthPx),
+            )
+            if ((!layout.didOverflowWidth && !layout.didOverflowHeight) || size <= floor) break
+            size = (size - 0.5f).coerceAtLeast(floor)
+        }
+        current
+    }
+    Text(
+        text, style = fitted, color = color, maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+    )
+}
+
+/** Share of the exactly-fitting text length that is actually used: a little more aggressive shortening. */
+private const val TEXT_FILL = 0.92

@@ -17,6 +17,7 @@ import com.diagramm.model.ByteFormat
 import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
 import com.diagramm.model.NodeKind
+import com.diagramm.model.NodeTags
 import java.io.File
 
 /** Formats byte counts with localised units ("ГБ" in Russian) and the locale's decimal separator. */
@@ -39,7 +40,8 @@ fun rememberSizeSplitter(): (Long) -> Pair<String, String> {
 @Composable
 fun nodeTitle(node: Node): String = when (node.kind) {
     NodeKind.FREE_SPACE -> stringResource(R.string.free_space)
-    NodeKind.HIDDEN_SPACE -> stringResource(R.string.hidden_space)
+    NodeKind.HIDDEN_SPACE ->
+        stringResource(if (node.tag == NodeTags.GOOGLE_SERVICES) R.string.hidden_google else R.string.hidden_space)
     else -> node.name
 }
 

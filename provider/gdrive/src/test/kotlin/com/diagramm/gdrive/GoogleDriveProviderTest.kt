@@ -91,7 +91,9 @@ class GoogleDriveProviderTest {
         val trash = tree.children.first { it.id == GoogleDriveProvider.TRASH_ID }
         assertEquals(100, trash.size)
         // used 2200 - scanned (400+700+100) = 1000 hidden; free 15000-2200 = 12800
-        assertEquals(1000, tree.children.first { it.kind == NodeKind.HIDDEN_SPACE }.size)
+        val hidden = tree.children.first { it.kind == NodeKind.HIDDEN_SPACE }
+        assertEquals(1000, hidden.size)
+        assertEquals(com.diagramm.model.NodeTags.GOOGLE_SERVICES, hidden.tag)
         assertEquals(12800, tree.children.first { it.kind == NodeKind.FREE_SPACE }.size)
         assertEquals(15000, tree.size)
         assertEquals(3, progress.files.get() - 1)

@@ -149,8 +149,8 @@ class Node private constructor(
         fun freeSpace(size: Long, name: String = "Free space") =
             Node("synthetic:free", name, NodeKind.FREE_SPACE, size.coerceAtLeast(0), 0, null, null, null, false, null, emptyList())
 
-        fun hiddenSpace(size: Long, name: String = "Other data") =
-            Node("synthetic:hidden", name, NodeKind.HIDDEN_SPACE, size.coerceAtLeast(0), 0, null, null, null, false, null, emptyList())
+        fun hiddenSpace(size: Long, name: String = "Other data", tag: String? = null) =
+            Node("synthetic:hidden", name, NodeKind.HIDDEN_SPACE, size.coerceAtLeast(0), 0, null, null, null, false, tag, emptyList())
     }
 }
 
@@ -161,4 +161,7 @@ object NodeTags {
 
     /** A system app: shown, but cannot be uninstalled. */
     const val SYSTEM_APP = "system-app"
+
+    /** Hidden space of a Google account: Photos, Gmail and other services that count against the quota. */
+    const val GOOGLE_SERVICES = "google-services"
 }

@@ -43,6 +43,10 @@
     <string name="rescan">Rescan</string>
     <string name="free_space">Free space</string>
     <string name="hidden_space">Other data (system, hidden)</string>
+    <string name="small_objects">Smaller items</string>
+    <string name="small_apps">Smaller apps</string>
+    <string name="system_apps">System apps</string>
+    <string name="hidden_google">Google services (Photos, Gmail, etc.)</string>
     <string name="files_count">%1$d files</string>
     <string name="access_denied">No access</string>
     <string name="collected">collected</string>

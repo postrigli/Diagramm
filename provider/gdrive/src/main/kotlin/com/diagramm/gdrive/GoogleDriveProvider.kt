@@ -3,6 +3,7 @@ package com.diagramm.gdrive
 import com.diagramm.model.FlatEntry
 import com.diagramm.model.FlatTreeBuilder
 import com.diagramm.model.Node
+import com.diagramm.model.NodeTags
 import com.diagramm.net.ApiException
 import com.diagramm.net.AuthRequiredException
 import com.diagramm.net.AuthorizedHttp
@@ -62,7 +63,7 @@ class GoogleDriveProvider(
         val scanned = children.sumOf { it.size }
         val extra = ArrayList<Node>(2)
         val hidden = quota.usedBytes - scanned
-        if (hidden > 0) extra.add(Node.hiddenSpace(hidden))
+        if (hidden > 0) extra.add(Node.hiddenSpace(hidden, tag = NodeTags.GOOGLE_SERVICES))
         val free = quota.freeBytes ?: 0
         if (free > 0) extra.add(Node.freeSpace(free))
         return Node.directory(rootId, displayName, children + extra)
