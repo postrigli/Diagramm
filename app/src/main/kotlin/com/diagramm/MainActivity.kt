@@ -19,7 +19,6 @@ import com.diagramm.ui.SourceType
 import com.diagramm.ui.UiMessage
 import com.diagramm.ui.theme.DiagrammTheme
 import kotlinx.coroutines.launch
-import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels { MainViewModel.Factory }
@@ -36,45 +35,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Uninstalling is a system dialog per app: run them one after another and report what really went.
-    private val uninstallQueue = ArrayDeque<String>()
-    private var currentUninstall: String? = null
+    // Uninstalling is the system's own dialog for one app; afterwards we check whether it really went.
+    private var pendingUninstall: String? = null
     private val uninstallLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        currentUninstall?.let { pkg -> if (!isInstalled(pkg)) vm.onAppsRemoved(listOf(pkg)) }
-        currentUninstall = null
-        launchNextUninstall()
+        pendingUninstall?.let { pkg -> if (!isInstalled(pkg)) vm.onAppsRemoved(listOf(pkg)) }
+        pendingUninstall = null
     }
-
-    // Shizuku can start, stop or change our permission at any time: keep the settings status current.
-    private val shizukuBinderReceived = Shizuku.OnBinderReceivedListener { vm.refreshSetup() }
-    private val shizukuBinderDead = Shizuku.OnBinderDeadListener { vm.refreshSetup() }
-    private val shizukuPermission = Shizuku.OnRequestPermissionResultListener { _, _ -> vm.refreshSetup() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        Shizuku.addBinderReceivedListenerSticky(shizukuBinderReceived)
-        Shizuku.addBinderDeadListener(shizukuBinderDead)
-        Shizuku.addRequestPermissionResultListener(shizukuPermission)
-        lifecycleScope.launch { vm.uninstallRequests.collect { startUninstall(it) } }
         handleRedirect(intent)
         setContent {
             DiagrammTheme {
-                DiagrammApp(vm = vm, onConnect = ::connect)
+                DiagrammApp(vm = vm, onConnect = ::connect, onUninstall = ::uninstall)
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        vm.refreshSetup() // e.g. back from the Shizuku app after starting it
-    }
-
-    override fun onDestroy() {
-        Shizuku.removeBinderReceivedListener(shizukuBinderReceived)
-        Shizuku.removeBinderDeadListener(shizukuBinderDead)
-        Shizuku.removeRequestPermissionResultListener(shizukuPermission)
-        super.onDestroy()
+        vm.onAppResumed() // back from an app's system settings: re-read that app's sizes
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -110,21 +91,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startUninstall(packages: List<String>) {
-        uninstallQueue.addAll(packages)
-        if (currentUninstall == null) launchNextUninstall()
-    }
-
-    private fun launchNextUninstall() {
-        val pkg = uninstallQueue.removeFirstOrNull() ?: return
-        currentUninstall = pkg
-        val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg"))
+    private fun uninstall(packageName: String) {
+        pendingUninstall = packageName
+        val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))
             .putExtra(Intent.EXTRA_RETURN_RESULT, true)
         try {
             uninstallLauncher.launch(intent)
         } catch (e: ActivityNotFoundException) {
-            currentUninstall = null
-            launchNextUninstall()
+            pendingUninstall = null
         }
     }
 

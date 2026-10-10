@@ -63,6 +63,7 @@ object AppsTree {
     fun withoutPackages(apps: List<AppUsage>, packages: Set<String>): List<AppUsage> =
         apps.filterNot { it.packageName in packages }
 
-    fun withClearedCache(apps: List<AppUsage>, packages: Set<String>): List<AppUsage> =
-        apps.map { if (it.packageName in packages) it.copy(cacheBytes = 0) else it }
+    /** [fresh] replaces the entry of the same package (e.g. after the user cleared its cache in system settings). */
+    fun withReplaced(apps: List<AppUsage>, fresh: AppUsage): List<AppUsage> =
+        apps.map { if (it.packageName == fresh.packageName) fresh else it }
 }

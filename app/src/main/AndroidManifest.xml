@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- "Apps" section: list every installed app, read its size (the user grants Usage access in
-         Settings) and hand uninstall requests to the system. -->
+         Settings) and hand uninstall requests to the system's own dialog. -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -56,15 +56,6 @@
                     android:scheme="${yandexScheme}" />
             </intent-filter>
         </activity>
-
-        <!-- Lets the Shizuku app hand us its binder (silent app removal without root). -->
-        <provider
-            android:name="rikka.shizuku.ShizukuProvider"
-            android:authorities="${applicationId}.shizuku"
-            android:enabled="true"
-            android:exported="true"
-            android:multiprocess="false"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

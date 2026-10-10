@@ -9,7 +9,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.material3.TriStateCheckbox
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -22,9 +25,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -55,7 +55,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -90,6 +92,7 @@ import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
 import com.diagramm.model.NodeKind
 import com.diagramm.model.NodeTags
+import com.diagramm.storage.AppUsage
 import com.diagramm.storage.AppsTree
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -101,8 +104,8 @@ private class ExplorerData(val sunburst: Sunburst, val totals: Map<FileCategory,
 fun ExplorerScreen(
     ex: ExplorerState,
     vm: MainViewModel,
-    shizukuReady: Boolean,
     onDelete: () -> Unit,
+    onUninstall: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -114,13 +117,15 @@ fun ExplorerScreen(
     val isLocal = ex.source.type == SourceType.LOCAL
     val isApps = ex.source.type == SourceType.APPS
 
-    // "Apps" has two views of the same data at its root: the apps themselves and their cache.
+    // "Apps": one list, sized and sorted either by total size or by cache size (the same data, two views).
     val apps = ex.apps
     val atAppsRoot = apps != null && current.parent == null
-    val cacheTab = atAppsRoot && apps?.tab == AppsTab.CACHE
-    val shown: Node = if (cacheTab && apps != null) apps.cacheRoot else current
-    val shownCollector: Collector = if (cacheTab && apps != null) apps.cacheCollector else ex.collector
+    val byCache = atAppsRoot && apps?.sort == AppsSort.CACHE
+    val shown: Node = if (byCache && apps != null) apps.cacheRoot else current
     val cacheTitle = stringResource(R.string.apps_cache_title)
+    val usageByPackage: Map<String, AppUsage> =
+        remember(apps?.usages) { apps?.usages?.associateBy { it.packageName }.orEmpty() }
+    var cacheHintVisible by rememberSaveable { mutableStateOf(true) }
 
     // Layout and category totals walk the whole subtree: keep them off the main thread.
     val data by produceState<ExplorerData?>(null, shown) {
@@ -160,7 +165,7 @@ fun ExplorerScreen(
     // Package whose settings page the info strip can open (the focused part, or the app we are inside).
     val appPackage = if (isApps) AppsTree.packageOf((ex.focus ?: current).id) else null
     val summary = when {
-        cacheTab -> stringResource(R.string.apps_count, shown.children.size) + " · " + fmt(shown.size)
+        byCache -> stringResource(R.string.apps_count, shown.children.size) + " · " + fmt(shown.size)
         isApps && current.parent == null ->
             stringResource(R.string.apps_count, current.children.size) + " · " + fmt(current.usedSize)
         isApps -> fmt(current.usedSize)
@@ -185,10 +190,10 @@ fun ExplorerScreen(
                 SunburstChart(
                     sunburst = data?.sunburst,
                     palette = palette,
-                    collector = shownCollector,
+                    collector = ex.collector,
                     focusId = ex.focus?.id,
                     centerTitle = fmt(shown.usedSize),
-                    centerSubtitle = if (cacheTab) cacheTitle else nodeTitle(current),
+                    centerSubtitle = if (byCache) cacheTitle else nodeTitle(current),
                     labelText = labelText,
                     sizeText = fmt,
                     onArc = { arc -> onArcTapped(arc, vm) },
@@ -197,14 +202,14 @@ fun ExplorerScreen(
                 )
             }
             val swipeToSwitch = if (atAppsRoot && apps != null) {
-                Modifier.pointerInput(apps.tab) {
+                Modifier.pointerInput(apps.sort) {
                     var total = 0f
                     val threshold = 64.dp.toPx()
                     detectHorizontalDragGestures(
                         onDragStart = { total = 0f },
                         onDragEnd = {
-                            if (total < -threshold && apps.tab == AppsTab.APPS) vm.setAppsTab(AppsTab.CACHE)
-                            else if (total > threshold && apps.tab == AppsTab.CACHE) vm.setAppsTab(AppsTab.APPS)
+                            if (total < -threshold && apps.sort == AppsSort.TOTAL) vm.setAppsSort(AppsSort.CACHE)
+                            else if (total > threshold && apps.sort == AppsSort.CACHE) vm.setAppsSort(AppsSort.TOTAL)
                         },
                         onHorizontalDrag = { _, dx -> total += dx },
                     )
@@ -230,37 +235,34 @@ fun ExplorerScreen(
             // the strip itself: apps tabs, the "N files . size" line with its actions, cache hint, type chips
             val middle: @Composable () -> Unit = {
                 if (atAppsRoot && apps != null) {
-                    AppsTabs(apps.tab, ex.root.usedSize, apps.cacheRoot.size, fmt, onSelect = { vm.setAppsTab(it) })
+                    AppsSortBar(apps.sort, ex.root.usedSize, apps.cacheRoot.size, fmt, onSelect = { vm.setAppsSort(it) })
                 }
                 InfoStrip(
                     current = shown,
                     focus = ex.focus,
-                    collected = ex.focus?.let { shownCollector.covers(it) } ?: false,
+                    collected = ex.focus?.let { ex.collector.covers(it) } ?: false,
+                    allowCollect = !isApps,
                     isLocal = isLocal,
                     summary = summary,
                     fmt = fmt,
                     appPackage = appPackage,
-                    onToggle = {
-                        ex.focus?.let { if (cacheTab) vm.toggleCache(it) else vm.toggleCollected(it) }
-                    },
+                    onToggle = { ex.focus?.let { vm.toggleCollected(it) } },
                     onOpen = { ex.focus?.let { openNode(context, it, isLocal) } },
-                    onAppSettings = { appPackage?.let { openAppSettings(context, it) } },
+                    onAppSettings = {
+                        appPackage?.let {
+                            vm.markAppForRefresh(it)
+                            openAppSettings(context, it)
+                        }
+                    },
                 )
-                if (cacheTab && apps != null) {
-                    CacheHeader(
-                        empty = apps.cacheRoot.children.isEmpty(),
-                        shizukuReady = shizukuReady,
-                        onSelectAll = { vm.selectAllCache() },
-                        onSetup = { vm.openSettings() },
-                    )
-                }
+                if (byCache && cacheHintVisible) CacheHint(onDismiss = { cacheHintVisible = false })
                 if (!isApps) {
                     CategoryChips(readyData?.totals.orEmpty(), ex.category, fmt, onSelect = { vm.setCategory(it) })
                 }
             }
             val list: @Composable (Modifier) -> Unit = { m ->
                 AnimatedContent(
-                    targetState = cacheTab,
+                    targetState = byCache,
                     modifier = m.then(swipeToSwitch),
                     transitionSpec = {
                         val towardsCache = targetState
@@ -270,11 +272,27 @@ fun ExplorerScreen(
                     label = "apps-tab",
                 ) { cache ->
                     val tree = if (cache && apps != null) apps.cacheRoot else current
-                    val collector = if (cache && apps != null) apps.cacheCollector else ex.collector
+                    val collector = ex.collector
                     val nodes = if (ex.category == null) tree.children else flat.orEmpty()
+                    // app rows (⚙ settings, 🗑 uninstall) only on the apps list itself, not inside one app
+                    val rowActions = if (isApps && tree.parent == null) {
+                        AppRowActions(
+                            usageByPackage = usageByPackage,
+                            byCache = cache,
+                            onSettings = { pkg ->
+                                vm.markAppForRefresh(pkg)
+                                openAppSettings(context, pkg)
+                            },
+                            onUninstall = onUninstall,
+                        )
+                    } else {
+                        null
+                    }
                     Column(Modifier.fillMaxSize()) {
-                        SelectAllHeader(nodes, collector) { select ->
-                            vm.setSelection(cache, nodes.filter { it.isCollectible }, select)
+                        if (!isApps) {
+                            SelectAllHeader(nodes, collector) { select ->
+                                vm.setSelection(nodes.filter { it.isCollectible }, select)
+                            }
                         }
                         NodeList(
                             nodes = nodes,
@@ -295,8 +313,9 @@ fun ExplorerScreen(
                                     }
                                 }
                             },
-                            onToggle = { if (cache) vm.toggleCache(it) else vm.toggleCollected(it) },
-                            onRangeSelect = { base, range, add -> vm.applyRange(cache, base, range, add) },
+                            onToggle = { vm.toggleCollected(it) },
+                            onRangeSelect = { base, range, add -> vm.applyRange(base, range, add) },
+                            appRows = rowActions,
                             modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                     }
@@ -332,19 +351,8 @@ fun ExplorerScreen(
             }
         }
 
-        AnimatedVisibility(visible = !shownCollector.isEmpty) {
-            if (cacheTab) {
-                CacheBar(
-                    collector = shownCollector,
-                    split = split,
-                    shizukuReady = shizukuReady,
-                    onClear = { vm.clearCacheSelection() },
-                    onClean = { vm.clearCaches() },
-                    onSetup = { vm.openSettings() },
-                )
-            } else {
-                CollectorBar(ex.collector, split, onClear = { vm.clearCollector() }, onDelete = onDelete)
-            }
+        AnimatedVisibility(visible = !ex.collector.isEmpty) {
+            CollectorBar(ex.collector, split, onClear = { vm.clearCollector() }, onDelete = onDelete)
         }
     }
 }
@@ -398,6 +406,7 @@ private fun InfoStrip(
     current: Node,
     focus: Node?,
     collected: Boolean,
+    allowCollect: Boolean,
     isLocal: Boolean,
     summary: String,
     fmt: (Long) -> String,
@@ -442,7 +451,7 @@ private fun InfoStrip(
                 if (appPackage != null) {
                     TextButton(onClick = onAppSettings) { Text(stringResource(R.string.app_settings)) }
                 }
-                if (focus.isCollectible) {
+                if (focus.isCollectible && allowCollect) {
                     if (focus.isFile && (isLocal || focus.link != null)) {
                         TextButton(onClick = onOpen) { Text(stringResource(R.string.action_open)) }
                     }
@@ -502,6 +511,7 @@ private fun NodeList(
     onClick: (Node) -> Unit,
     onToggle: (Node) -> Unit,
     onRangeSelect: (base: Collector, range: List<Node>, add: Boolean) -> Unit,
+    appRows: AppRowActions?,
     modifier: Modifier = Modifier,
 ) {
     if (nodes.isEmpty()) {
@@ -523,7 +533,7 @@ private fun NodeList(
 
     LazyColumn(
         state = listState,
-        modifier = modifier.pointerInput(Unit) {
+        modifier = modifier.then(if (appRows != null) Modifier else Modifier.pointerInput(Unit) {
             val edge = 56.dp.toPx()
             awaitEachGesture {
                 // Long press starts a selection that follows the finger; nothing is consumed before that, so
@@ -569,9 +579,13 @@ private fun NodeList(
                 }
                 selection.base = null
             }
-        },
+        }),
     ) {
         items(nodes, key = { it.id }) { node ->
+            if (appRows != null) {
+                AppRow(node, colorById[node.id] ?: palette.smallObjects, appRows, fmt, onClick = { onClick(node) })
+                return@items
+            }
             val contained = collector.contains(node)
             val covered = contained || (node.isCollectible && collector.covers(node))
             NodeRow(
@@ -739,115 +753,124 @@ private fun percent(part: Long, whole: Long): String {
     return if (p < 1.0) "<1%" else "${p.roundToInt()}%"
 }
 
+/** What the buttons on an app's row do. */
+private class AppRowActions(
+    val usageByPackage: Map<String, AppUsage>,
+    /** The list is sorted by cache: cache is the big number, the total the small one. */
+    val byCache: Boolean,
+    val onSettings: (String) -> Unit,
+    val onUninstall: (String) -> Unit,
+)
+
+/**
+ * One app: its main figure follows the sort order (total or cache), the other one is shown small below
+ * the name. ⚙ opens the app's system settings page (Storage > Clear cache / Clear data / Uninstall),
+ * 🗑 asks Android to uninstall it (system apps cannot be).
+ */
 @Composable
-private fun AppsTabs(
-    tab: AppsTab,
-    appsSize: Long,
-    cacheSize: Long,
+private fun AppRow(
+    node: Node,
+    color: Color,
+    actions: AppRowActions,
     fmt: (Long) -> String,
-    onSelect: (AppsTab) -> Unit,
+    onClick: () -> Unit,
 ) {
-    TabRow(
-        selectedTabIndex = tab.ordinal,
-        containerColor = Color.Transparent,
-        contentColor = MaterialTheme.colorScheme.primary,
+    val pkg = AppsTree.packageOf(node.id)
+    val usage = pkg?.let { actions.usageByPackage[it] }
+    val total = usage?.let { it.codeBytes + it.dataBytes + it.cacheBytes } ?: node.size
+    val cache = usage?.cacheBytes ?: 0L
+    val system = usage?.isSystem == true
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Tab(
-            selected = tab == AppsTab.APPS,
-            onClick = { onSelect(AppsTab.APPS) },
-            text = { TabLabel(stringResource(R.string.apps_tab_apps), fmt(appsSize)) },
-        )
-        Tab(
-            selected = tab == AppsTab.CACHE,
-            onClick = { onSelect(AppsTab.CACHE) },
-            text = { TabLabel(stringResource(R.string.apps_tab_cache), fmt(cacheSize)) },
-        )
-    }
-}
-
-@Composable
-private fun TabLabel(title: String, size: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        Text(size, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-/** Explains what clearing a cache means, offers "select all", and says so when Shizuku is not ready. */
-@Composable
-private fun CacheHeader(
-    empty: Boolean,
-    shizukuReady: Boolean,
-    onSelectAll: () -> Unit,
-    onSetup: () -> Unit,
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(if (empty) R.string.cache_empty else R.string.cache_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                if (!empty) TextButton(onClick = onSelectAll) { Text(stringResource(R.string.cache_select_all)) }
+        Box(Modifier.size(14.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(node.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val other = if (actions.byCache) {
+                stringResource(R.string.apps_row_total, fmt(total))
+            } else {
+                stringResource(R.string.apps_row_cache, fmt(cache))
             }
-            if (!shizukuReady && !empty) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(R.string.cache_need_shizuku),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onSetup) { Text(stringResource(R.string.cache_setup)) }
-                }
+            Text(
+                (if (system) stringResource(R.string.system_app) + " · " else "") + other,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            fmt(if (actions.byCache) cache else total),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+        )
+        IconButton(onClick = { pkg?.let(actions.onSettings) }, modifier = Modifier.size(40.dp)) {
+            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.app_settings))
+        }
+        if (system) {
+            Spacer(Modifier.width(40.dp))
+        } else {
+            IconButton(onClick = { pkg?.let(actions.onUninstall) }, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = stringResource(R.string.app_uninstall),
+                    tint = MaterialTheme.colorScheme.error,
+                )
             }
         }
     }
 }
 
-/** The collector bar of the cache tab: calm primary colour, because clearing a cache loses nothing. */
+/** "Sort by": total size or cache size, each with its overall figure. */
 @Composable
-private fun CacheBar(
-    collector: Collector,
-    split: (Long) -> Pair<String, String>,
-    shizukuReady: Boolean,
-    onClear: () -> Unit,
-    onClean: () -> Unit,
-    onSetup: () -> Unit,
+private fun AppsSortBar(
+    sort: AppsSort,
+    totalSize: Long,
+    cacheSize: Long,
+    fmt: (Long) -> String,
+    onSelect: (AppsSort) -> Unit,
 ) {
-    val (value, unit) = split(collector.totalSize)
-    Surface(
-        tonalElevation = 8.dp,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(56.dp).border(BorderStroke(2.dp, MaterialTheme.colorScheme.primary), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(value, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, maxLines = 1)
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(unit + " " + stringResource(R.string.cache_selected), style = MaterialTheme.typography.bodyLarge)
-                Text(
-                    stringResource(R.string.apps_count, collector.items.size),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            IconButton(onClick = onClear) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear)) }
-            if (shizukuReady) {
-                Button(onClick = onClean) { Text(stringResource(R.string.cache_clear)) }
-            } else {
-                FilledTonalButton(onClick = onSetup) { Text(stringResource(R.string.cache_setup)) }
+        FilterChip(
+            selected = sort == AppsSort.TOTAL,
+            onClick = { onSelect(AppsSort.TOTAL) },
+            label = { Text(stringResource(R.string.apps_sort_total) + " · " + fmt(totalSize), maxLines = 1) },
+            modifier = Modifier.weight(1f),
+        )
+        FilterChip(
+            selected = sort == AppsSort.CACHE,
+            onClick = { onSelect(AppsSort.CACHE) },
+            label = { Text(stringResource(R.string.apps_sort_cache) + " · " + fmt(cacheSize), maxLines = 1) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** Where the cache button is: a clearing happens on the system page, not in Diagramm. */
+@Composable
+private fun CacheHint(onDismiss: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(start = 14.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(R.string.apps_cache_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+            )
+            IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear))
             }
         }
     }

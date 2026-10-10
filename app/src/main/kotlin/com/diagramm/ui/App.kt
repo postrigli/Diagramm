@@ -2,14 +2,11 @@ package com.diagramm.ui
 
 import android.Manifest
 import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -57,10 +53,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.diagramm.DiagrammApp
 import com.diagramm.R
-import com.diagramm.data.AppRemovalMode
-import com.diagramm.data.ShizukuStatus
 import com.diagramm.data.StorageAccess
 import com.diagramm.data.UsageAccess
 import com.diagramm.model.Collector
@@ -71,12 +64,12 @@ import com.diagramm.storage.DeleteMode
 fun DiagrammApp(
     vm: MainViewModel,
     onConnect: (SourceType) -> Unit,
+    onUninstall: (String) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val fmt = rememberSizeFormatter()
-    val shizuku = remember { (context.applicationContext as DiagrammApp).container.shizuku }
 
     // ---- one-off messages ----
     val currentFmt by rememberUpdatedState(fmt)
@@ -118,7 +111,6 @@ fun DiagrammApp(
                 Screen.SCANNING -> state.scan?.let { sourceTitle(it.source) }.orEmpty()
                 Screen.EXPLORER -> state.explorer?.let { sourceTitle(it.source) }.orEmpty()
                 Screen.TRASH -> stringResource(R.string.trash_title)
-                Screen.SETTINGS -> stringResource(R.string.settings_title)
             }
             TopAppBar(
                 title = { Text(title) },
@@ -132,9 +124,6 @@ fun DiagrammApp(
                 },
                 actions = {
                     when (state.screen) {
-                        Screen.HOME -> IconButton(onClick = { vm.openSettings() }) {
-                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings_title))
-                        }
                         Screen.EXPLORER -> {
                             IconButton(onClick = { vm.rescan() }) {
                                 Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.rescan))
@@ -171,37 +160,14 @@ fun DiagrammApp(
             Screen.EXPLORER -> state.explorer?.let {
                 ExplorerScreen(
                     it, vm,
-                    shizukuReady = state.settings.shizuku == ShizukuStatus.READY,
                     onDelete = { showDeleteDialog = true },
+                    onUninstall = onUninstall,
                     modifier = content,
                 )
             }
             Screen.TRASH -> state.trash?.let {
                 TrashScreen(it.entries, onRestore = vm::restore, onPurge = vm::purge, modifier = content)
             }
-            Screen.SETTINGS -> SettingsScreen(
-                settings = state.settings,
-                onMode = vm::setRemovalMode,
-                actions = SetupActions(
-                    requestShizuku = { shizuku.requestPermission() },
-                    openShizuku = { shizuku.openShizukuApp() },
-                    downloadShizuku = { shizuku.openDownloadPage() },
-                    openUsageAccess = { openUsageAccessSettings(context) },
-                    openAppInfo = { openAppSettings(context, context.packageName) },
-                    refresh = { vm.refreshSetup() },
-                    runSelfTest = { vm.runSelfTest() },
-                    copyLog = {
-                        val clipboard = context.getSystemService(ClipboardManager::class.java)
-                        clipboard?.setPrimaryClip(ClipData.newPlainText("Diagramm log", vm.logText()))
-                        Toast.makeText(context, R.string.log_copied, Toast.LENGTH_SHORT).show()
-                    },
-                    shareLog = {
-                        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, vm.logText())
-                        context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    },
-                ),
-                modifier = content,
-            )
         }
     }
 
@@ -230,66 +196,29 @@ fun DiagrammApp(
         AlertDialog(
             onDismissRequest = { askUsageFor = null },
             title = { Text(stringResource(R.string.usage_title)) },
-            text = { Text(stringResource(R.string.usage_text)) },
-            confirmButton = {
-                TextButton(onClick = { openUsageAccessSettings(context) }) { Text(stringResource(R.string.perm_grant)) }
-            },
-            dismissButton = { TextButton(onClick = { askUsageFor = null }) { Text(stringResource(R.string.cancel)) } },
-        )
-    }
-
-    // First launch: ask how apps should be removed (changeable later with the gear on the main screen).
-    if (state.screen == Screen.HOME && !state.settings.removalChosen) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text(stringResource(R.string.removal_choice_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.removal_choice_text), style = MaterialTheme.typography.bodyMedium)
-                    RemovalModeOption(
-                        selected = false,
-                        title = stringResource(R.string.removal_system_title),
-                        description = stringResource(R.string.removal_system_desc),
-                        onSelect = { vm.setRemovalMode(AppRemovalMode.SYSTEM_DIALOGS) },
-                    )
-                    RemovalModeOption(
-                        selected = false,
-                        title = stringResource(R.string.removal_shizuku_title),
-                        description = stringResource(R.string.removal_shizuku_desc),
-                        onSelect = {
-                            vm.setRemovalMode(AppRemovalMode.SHIZUKU)
-                            vm.openSettings() // show the remaining Shizuku steps right away
-                        },
+                    Text(stringResource(R.string.usage_text), style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        stringResource(R.string.usage_restricted),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             },
-            confirmButton = {},
+            confirmButton = {
+                TextButton(onClick = { openUsageAccessSettings(context) }) { Text(stringResource(R.string.usage_open)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { openAppSettings(context, context.packageName) }) {
+                    Text(stringResource(R.string.usage_app_info))
+                }
+            },
         )
     }
 
     val explorer = state.explorer
-    if (showDeleteDialog && explorer != null && !explorer.collector.isEmpty && explorer.source.type == SourceType.APPS) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text(stringResource(R.string.apps_uninstall_title, explorer.collector.items.size)) },
-            text = {
-                Text(
-                    stringResource(
-                        if (state.settings.removalMode == AppRemovalMode.SHIZUKU) R.string.apps_uninstall_text_shizuku
-                        else R.string.apps_uninstall_text,
-                        fmt(explorer.collector.totalSize),
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteDialog = false
-                    vm.delete(DeleteMode.PERMANENT)
-                }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.cancel)) } },
-        )
-    } else if (showDeleteDialog && explorer != null && !explorer.collector.isEmpty) {
+    if (showDeleteDialog && explorer != null && !explorer.collector.isEmpty) {
         DeleteDialog(
             collector = explorer.collector,
             local = explorer.source.type == SourceType.LOCAL,
@@ -303,25 +232,11 @@ fun DiagrammApp(
         )
     }
     if (state.deleting) {
-        val progress = state.deletingProgress
-        val clearingCache = state.explorer?.apps?.tab == AppsTab.CACHE
         AlertDialog(
             onDismissRequest = {},
             confirmButton = {},
-            title = { Text(stringResource(if (clearingCache) R.string.cache_clearing else R.string.deleting)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (progress != null && progress.second > 0) {
-                        Text(stringResource(R.string.deleting_progress, progress.first, progress.second))
-                        LinearProgressIndicator(
-                            progress = { progress.first.toFloat() / progress.second },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
-                    }
-                }
-            },
+            title = { Text(stringResource(R.string.deleting)) },
+            text = { LinearProgressIndicator(Modifier.fillMaxWidth()) },
         )
     }
 }
@@ -384,9 +299,6 @@ private fun messageText(context: Context, msg: UiMessage, fmt: (Long) -> String)
         is UiMessage.DeleteFailed -> context.getString(R.string.msg_delete_partial, msg.count, msg.reason ?: unknown)
         is UiMessage.RestoreFailed -> context.getString(R.string.msg_restore_failed, msg.reason ?: unknown)
         is UiMessage.ConnectFailed -> context.getString(R.string.msg_connect_failed, msg.reason ?: unknown)
-        UiMessage.ShizukuFallback -> context.getString(R.string.msg_shizuku_fallback)
-        is UiMessage.CacheCleared -> context.getString(R.string.msg_cache_cleared, fmt(msg.bytes))
-        is UiMessage.CacheFailed -> context.getString(R.string.msg_cache_failed, msg.count, msg.reason ?: unknown)
     }
 }
 

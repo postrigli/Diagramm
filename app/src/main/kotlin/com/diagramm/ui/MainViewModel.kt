@@ -6,12 +6,7 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import android.os.Build
 import com.diagramm.AppContainer
-import com.diagramm.BuildConfig
-import com.diagramm.data.DiagnosticLog
-import com.diagramm.data.AppRemovalMode
-import com.diagramm.data.ShizukuStatus
 import com.diagramm.DiagrammApp
 import com.diagramm.model.Collector
 import com.diagramm.model.FileCategory
@@ -42,12 +37,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private const val LOG_TAIL_LINES = 14
-
 class MainViewModel(private val container: AppContainer) : ViewModel() {
-    private val _state = MutableStateFlow(
-        AppState(settings = SettingsUi(container.settings.removalMode, container.settings.removalModeChosen)),
-    )
+    private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state.asStateFlow()
 
     private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 8)
@@ -55,14 +46,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
 
     private var scanJob: Job? = null
 
-    private val _uninstallRequests = MutableSharedFlow<List<String>>(extraBufferCapacity = 4)
-
-    /** Package names the activity should hand to the system uninstaller, one dialog after another. */
-    val uninstallRequests: SharedFlow<List<String>> = _uninstallRequests.asSharedFlow()
+    /** App whose system settings page the user just opened: its figures are re-read when we come back. */
+    private var pendingAppRefresh: String? = null
 
     init {
         refreshSources()
-        refreshSetup()
     }
 
     // ---- sources -------------------------------------------------------------------------------
@@ -170,7 +158,10 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                         val provider = container.appsProvider()
                         val usages = provider.loadUsages(progress)
                         val labels = provider.labels
-                        AppsTree.build(usages, labels) to AppsExplorer(usages, labels, AppsTree.buildCache(usages, labels))
+                        AppsTree.build(usages, labels) to AppsExplorer(
+                            usages, labels, AppsTree.buildCache(usages, labels),
+                            sort = if (container.settings.appsSortByCache) AppsSort.CACHE else AppsSort.TOTAL,
+                        )
                     } else {
                         providerFor(source).scan(progress) to null
                     }
@@ -224,7 +215,6 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 }
             }
             Screen.TRASH -> toHome()
-            Screen.SETTINGS -> _state.update { it.copy(screen = Screen.HOME) }
         }
         return true
     }
@@ -238,8 +228,8 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
     fun navigateTo(node: Node) {
         if (!node.isDirectory) return
         updateExplorer {
-            // inside an app we are always on the "Apps" tab
-            val apps = if (node.parent != null) it.apps?.copy(tab = AppsTab.APPS) else it.apps
+            // inside an app we always show the total breakdown (code / data / cache)
+            val apps = if (node.parent != null) it.apps?.copy(sort = AppsSort.TOTAL) else it.apps
             it.copy(current = node, focus = null, category = null, apps = apps)
         }
     }
@@ -262,25 +252,17 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
      * Drag-selection: the selection is [base] (taken when the long press started) plus or minus the nodes
      * [range] the finger has swept over, so moving back un-selects again.
      */
-    fun applyRange(cache: Boolean, base: Collector, range: List<Node>, add: Boolean) {
-        setCollector(cache, range.fold(base) { c, n -> if (add) c.plus(n) else c.minus(n) })
+    fun applyRange(base: Collector, range: List<Node>, add: Boolean) {
+        setCollector(range.fold(base) { c, n -> if (add) c.plus(n) else c.minus(n) })
     }
 
     /** The "select all" checkbox above the list: (un)select every node of the shown list. */
-    fun setSelection(cache: Boolean, nodes: List<Node>, select: Boolean) {
-        val ex = _state.value.explorer ?: return
-        val base = if (cache) {
-            ex.apps?.cacheCollector ?: return
-        } else {
-            ex.collector
-        }
-        setCollector(cache, nodes.fold(base) { c, n -> if (select) c.plus(n) else c.minus(n) })
+    fun setSelection(nodes: List<Node>, select: Boolean) {
+        val base = _state.value.explorer?.collector ?: return
+        setCollector(nodes.fold(base) { c, n -> if (select) c.plus(n) else c.minus(n) })
     }
 
-    private fun setCollector(cache: Boolean, collector: Collector) = updateExplorer { ex ->
-        if (cache) ex.apps?.let { a -> ex.copy(apps = a.copy(cacheCollector = collector)) } ?: ex
-        else ex.copy(collector = collector)
-    }
+    private fun setCollector(collector: Collector) = updateExplorer { it.copy(collector = collector) }
 
     // ---- collector & deletion ------------------------------------------------------------------
 
@@ -292,17 +274,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         val ex = _state.value.explorer ?: return
         val items = ex.collector.items
         if (items.isEmpty() || _state.value.deleting) return
-        if (ex.source.type != SourceType.APPS) _state.update { it.copy(lastDeleteMode = mode) }
-        if (ex.source.type == SourceType.APPS) {
-            val packages = items.mapNotNull { AppsTree.packageOf(it.id) }
-            if (_state.value.settings.removalMode == AppRemovalMode.SHIZUKU) {
-                removeAppsWithShizuku(items, packages)
-            } else {
-                // system uninstaller: Android asks for confirmation of each app
-                _uninstallRequests.tryEmit(packages)
-            }
-            return
-        }
+        _state.update { it.copy(lastDeleteMode = mode) }
         viewModelScope.launch {
             _state.update { it.copy(deleting = true) }
             val result: DeleteResult = try {
@@ -342,45 +314,57 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         return withChildren(children - free + Node.freeSpace(free.size + bytes))
     }
 
-    private fun removeAppsWithShizuku(items: List<Node>, packages: List<String>) {
-        viewModelScope.launch {
-            // Shizuku calls are binder transactions: never on the main thread
-            val status = withContext(Dispatchers.IO) { container.shizuku.status() }
-            _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
-            if (status != ShizukuStatus.READY) {
-                // not usable right now: fall back to the system dialogs instead of leaving the user stuck
-                _messages.tryEmit(UiMessage.ShizukuFallback)
-                _uninstallRequests.tryEmit(packages)
-                return@launch
-            }
-            _state.update { it.copy(deleting = true, deletingProgress = 0 to packages.size) }
-            try {
-                val result = container.privilegedRemover.remove(packages) { done, total ->
-                    _state.update { it.copy(deletingProgress = done to total) }
-                }
-                onAppsRemoved(result.removed)
-                val freed = items.filter { AppsTree.packageOf(it.id) in result.removed }.sumOf { it.size }
-                if (result.removed.isNotEmpty()) _messages.tryEmit(UiMessage.Deleted(freed))
-                if (result.failures.isNotEmpty()) {
-                    _messages.tryEmit(UiMessage.DeleteFailed(result.failures.size, result.failures.values.firstOrNull()))
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _messages.tryEmit(UiMessage.DeleteFailed(packages.size, e.message ?: e.javaClass.simpleName))
-            } finally {
-                _state.update { it.copy(deleting = false, deletingProgress = null) }
-            }
+    // ---- apps: sort order, per-app actions ---------------------------------------------------------
+
+    fun setAppsSort(sort: AppsSort) {
+        container.settings.appsSortByCache = sort == AppsSort.CACHE
+        updateExplorer { ex ->
+            val apps = ex.apps
+            if (apps == null || apps.sort == sort) ex else ex.copy(apps = apps.copy(sort = sort), focus = null)
         }
     }
 
-    /** Called after the system uninstaller (or Shizuku) really removed these packages. */
+    /** The user is about to leave for [packageName]'s system settings: re-read that app when we are back. */
+    fun markAppForRefresh(packageName: String) {
+        pendingAppRefresh = packageName
+    }
+
+    /** Called whenever the app returns to the foreground. */
+    fun onAppResumed() {
+        val pkg = pendingAppRefresh ?: return
+        pendingAppRefresh = null
+        refreshApp(pkg)
+    }
+
+    /** Called after the system uninstaller reported this package gone. */
     fun onAppsRemoved(packages: Collection<String>) {
         updateExplorer { ex ->
             val apps = ex.apps ?: return@updateExplorer ex
             ex.withUsages(AppsTree.withoutPackages(apps.usages, packages.toSet()))
         }
         persistAppsSummary()
+    }
+
+    private fun refreshApp(packageName: String) {
+        viewModelScope.launch {
+            val fresh = try {
+                withContext(Dispatchers.IO) { container.appsProvider().loadUsage(packageName) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@launch // keep the old figures
+            }
+            updateExplorer { ex ->
+                val apps = ex.apps ?: return@updateExplorer ex
+                val usages = if (fresh == null) {
+                    AppsTree.withoutPackages(apps.usages, setOf(packageName))
+                } else {
+                    AppsTree.withReplaced(apps.usages, fresh)
+                }
+                ex.withUsages(usages)
+            }
+            persistAppsSummary()
+        }
     }
 
     /** Remembers the current totals so the main screen can show them next time ("minus what was deleted"). */
@@ -390,163 +374,16 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         container.appsSummary.write(ex.root.size, apps.cacheRoot.size)
     }
 
-    // ---- apps: cache tab ------------------------------------------------------------------------
-
-    fun setAppsTab(tab: AppsTab) = updateExplorer { ex ->
-        val apps = ex.apps
-        if (apps == null || apps.tab == tab) ex else ex.copy(apps = apps.copy(tab = tab), focus = null)
-    }
-
-    fun toggleCache(node: Node) = updateExplorer { ex ->
-        ex.apps?.let { a -> ex.copy(apps = a.copy(cacheCollector = a.cacheCollector.toggle(node))) } ?: ex
-    }
-
-    fun clearCacheSelection() = updateExplorer { ex ->
-        ex.apps?.let { a -> ex.copy(apps = a.copy(cacheCollector = a.cacheCollector.cleared())) } ?: ex
-    }
-
-    fun selectAllCache() = updateExplorer { ex ->
-        ex.apps?.let { a ->
-            ex.copy(apps = a.copy(cacheCollector = a.cacheRoot.children.fold(Collector()) { c, n -> c.plus(n) }))
-        } ?: ex
-    }
-
-    /** Clears the cache of the selected apps through Shizuku (the only way Android lets us do it). */
-    fun clearCaches() {
-        val ex = _state.value.explorer ?: return
-        val apps = ex.apps ?: return
-        val items = apps.cacheCollector.items
-        if (items.isEmpty() || _state.value.deleting) return
-        val packages = items.mapNotNull { AppsTree.packageOf(it.id) }
-
-        viewModelScope.launch {
-            val status = withContext(Dispatchers.IO) { container.shizuku.status() }
-            _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
-            if (status != ShizukuStatus.READY) return@launch // the screen shows the setup prompt instead of the button
-
-            _state.update { it.copy(deleting = true, deletingProgress = 0 to packages.size) }
-            try {
-                DiagnosticLog.add("clear cache: ${packages.size} apps, shizuku=$status")
-                val result = container.privilegedRemover.clearCaches(packages) { done, total ->
-                    _state.update { it.copy(deletingProgress = done to total) }
-                }
-                DiagnosticLog.add("clear cache result: ok=${result.removed.size}, failed=${result.failures.entries.take(10)}")
-                val freed = items.filter { AppsTree.packageOf(it.id) in result.removed }.sumOf { it.size }
-                updateExplorer { cur ->
-                    val a = cur.apps ?: return@updateExplorer cur
-                    cur.withUsages(AppsTree.withClearedCache(a.usages, result.removed))
-                }
-                persistAppsSummary()
-                if (result.removed.isNotEmpty()) _messages.tryEmit(UiMessage.CacheCleared(freed))
-                if (result.failures.isNotEmpty()) {
-                    _messages.tryEmit(UiMessage.CacheFailed(result.failures.size, result.failures.values.firstOrNull()))
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                // whatever went wrong, report it instead of crashing
-                DiagnosticLog.add("clear cache crashed: $e")
-                _messages.tryEmit(UiMessage.CacheFailed(packages.size, e.message ?: e.javaClass.simpleName))
-            } finally {
-                _state.update { it.copy(deleting = false, deletingProgress = null) }
-                refreshLogTail()
-            }
-        }
-    }
-
-    /** Rebuilds both trees from fresh figures, keeping the user's place and re-resolving the selections. */
+    /** Rebuilds both trees from fresh figures, keeping the user's place. */
     private fun ExplorerState.withUsages(newUsages: List<AppUsage>): ExplorerState {
         val apps = apps ?: return this
         val newRoot = AppsTree.build(newUsages, apps.labels)
-        val newCache = AppsTree.buildCache(newUsages, apps.labels)
         return copy(
             root = newRoot,
             current = newRoot.findById(current.id) ?: newRoot,
-            collector = collector.rebound(newRoot),
             focus = null,
-            apps = apps.copy(usages = newUsages, cacheRoot = newCache, cacheCollector = apps.cacheCollector.rebound(newCache)),
+            apps = apps.copy(usages = newUsages, cacheRoot = AppsTree.buildCache(newUsages, apps.labels)),
         )
-    }
-
-    private fun Collector.rebound(tree: Node): Collector =
-        items.fold(Collector()) { c, n -> tree.findById(n.id)?.let { c.plus(it) } ?: c }
-
-    // ---- settings ------------------------------------------------------------------------------
-
-    fun openSettings() {
-        refreshSetup()
-        _state.update { it.copy(screen = Screen.SETTINGS) }
-    }
-
-    /** Everything worth sending when something does not work: device, versions, Shizuku state and the command journal. */
-    fun logText(): String {
-        val st = _state.value.settings
-        return buildString {
-            appendLine("Diagramm ${BuildConfig.VERSION_NAME}")
-            appendLine("Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}")
-            appendLine("Security patch: ${Build.VERSION.SECURITY_PATCH}")
-            appendLine(st.shizukuInfo.ifEmpty { "Shizuku: (not read yet)" })
-            appendLine("Usage access: ${st.usageAccess}; removal mode: ${st.removalMode}")
-            appendLine("--- journal ---")
-            append(DiagnosticLog.snapshot().joinToString("\n"))
-        }
-    }
-
-    /**
-     * Safe check of the commands behind "clear cache": `id` (which user Shizuku runs as), clearing Diagramm's
-     * OWN cache, and a harmless `pm trim-caches 1`. Results land in the journal.
-     */
-    fun runSelfTest() {
-        if (_state.value.settings.selfTestRunning) return
-        _state.update { it.copy(settings = it.settings.copy(selfTestRunning = true)) }
-        viewModelScope.launch {
-            try {
-                DiagnosticLog.add("=== self-test ===")
-                withContext(Dispatchers.IO) {
-                    DiagnosticLog.add(container.shizuku.describe())
-                    val tests = listOf(
-                        listOf("id"),
-                        listOf("pm", "clear", "--cache-only", BuildConfig.APPLICATION_ID),
-                        listOf("pm", "trim-caches", "1"),
-                    )
-                    for (cmd in tests) {
-                        try {
-                            container.shellRunner.run(cmd) // the runner writes the details to the journal
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            // already journaled
-                        }
-                    }
-                }
-                DiagnosticLog.add("=== self-test done ===")
-            } finally {
-                _state.update {
-                    it.copy(settings = it.settings.copy(selfTestRunning = false, logTail = DiagnosticLog.tail(LOG_TAIL_LINES)))
-                }
-            }
-        }
-    }
-
-    private fun refreshLogTail() =
-        _state.update { it.copy(settings = it.settings.copy(logTail = DiagnosticLog.tail(LOG_TAIL_LINES))) }
-
-    fun setRemovalMode(mode: AppRemovalMode) {
-        container.settings.removalMode = mode
-        _state.update { it.copy(settings = it.settings.copy(removalMode = mode, removalChosen = true)) }
-        if (mode == AppRemovalMode.SHIZUKU) refreshSetup()
-    }
-
-    /** Re-reads what Shizuku can do right now (also called when its binder or our permission changes). */
-    fun refreshSetup() {
-        viewModelScope.launch {
-            // binder calls to Shizuku can block; keep them off the main thread
-            val (status, usage) = withContext(Dispatchers.IO) { container.shizuku.status() to container.hasUsageAccess() }
-            val info = withContext(Dispatchers.IO) { container.shizuku.describe() }
-            _state.update {
-                it.copy(settings = it.settings.copy(shizuku = status, usageAccess = usage, shizukuInfo = info, logTail = DiagnosticLog.tail(LOG_TAIL_LINES)))
-            }
-        }
     }
 
     // ---- local trash ---------------------------------------------------------------------------

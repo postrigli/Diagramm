@@ -9,7 +9,6 @@ activityCompose = "1.10.1"
 lifecycle = "2.9.1"
 playServicesAuth = "21.3.0"
 coreKtx = "1.16.0"
-shizuku = "13.1.5"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -30,8 +29,6 @@ compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
-shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
-shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
 play-services-auth = { module = "com.google.android.gms:play-services-auth", version.ref = "playServicesAuth" }
 
 [plugins]

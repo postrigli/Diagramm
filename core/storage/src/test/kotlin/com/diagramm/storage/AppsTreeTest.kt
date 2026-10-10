@@ -65,12 +65,13 @@ class AppsTreeTest {
 
     @Test
     fun `usage list helpers`() {
-        val cleared = AppsTree.withClearedCache(apps, setOf("com.big"))
+        val big = apps.first { it.packageName == "com.big" }
+        val cleared = AppsTree.withReplaced(apps, big.copy(cacheBytes = 0))
         assertEquals(0L, cleared.first { it.packageName == "com.big" }.cacheBytes)
         assertEquals(300L, cleared.first { it.packageName == "com.big" }.dataBytes)
         assertEquals(5L, cleared.first { it.packageName == "com.sys" }.cacheBytes)
         assertEquals(listOf("com.small", "com.sys", "com.empty", "com.noname"),
             AppsTree.withoutPackages(apps, setOf("com.big")).map { it.packageName })
-        assertEquals(listOf("System"), AppsTree.buildCache(AppsTree.withClearedCache(apps, setOf("com.big")), labels).children.map { it.name })
+        assertEquals(listOf("System"), AppsTree.buildCache(cleared, labels).children.map { it.name })
     }
 }

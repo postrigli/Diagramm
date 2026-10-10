@@ -8,17 +8,12 @@ import com.diagramm.data.AppsSummaryStore
 import com.diagramm.data.InstalledAppsProvider
 import com.diagramm.data.LocalVolume
 import com.diagramm.data.LocalVolumes
-import com.diagramm.data.ProcessCommandRunner
 import com.diagramm.data.SecureStore
-import com.diagramm.data.UsageAccess
-import com.diagramm.data.ShizukuAccess
-import com.diagramm.data.ShizukuShell
 import com.diagramm.gdrive.GoogleDriveProvider
 import com.diagramm.net.AccessTokenProvider
 import com.diagramm.net.AuthorizedHttp
 import com.diagramm.storage.LocalStorageProvider
 import com.diagramm.storage.LocalTrash
-import com.diagramm.storage.PrivilegedPackageRemover
 import com.diagramm.storage.StorageProvider
 import com.diagramm.yandex.YandexDiskProvider
 import okhttp3.OkHttpClient
@@ -30,9 +25,6 @@ class AppContainer(private val context: Context) {
     val secureStore = SecureStore(context)
     val settings = AppSettings(context)
     val appsSummary = AppsSummaryStore(context)
-    val shizuku = ShizukuAccess(context)
-    val shellRunner = ProcessCommandRunner(start = ShizukuShell::start)
-    val privilegedRemover = PrivilegedPackageRemover(shellRunner)
     val googleAuth = GoogleAuth(context, secureStore)
     val yandexAuth = YandexAuth(secureStore)
 
@@ -50,7 +42,6 @@ class AppContainer(private val context: Context) {
 
     fun appsProvider(): InstalledAppsProvider = InstalledAppsProvider(context)
 
-    fun hasUsageAccess(): Boolean = UsageAccess.has(context)
 
     fun googleProvider(): StorageProvider = GoogleDriveProvider(
         AuthorizedHttp(httpClient, AccessTokenProvider { googleAuth.silentToken() }),

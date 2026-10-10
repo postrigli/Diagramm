@@ -1,7 +1,5 @@
 package com.diagramm.ui
 
-import com.diagramm.data.AppRemovalMode
-import com.diagramm.data.ShizukuStatus
 import com.diagramm.model.Collector
 import com.diagramm.storage.AppsTreeLabels
 import com.diagramm.storage.DeleteMode
@@ -28,7 +26,7 @@ data class SourceItem(
     val configured: Boolean = true,
 )
 
-enum class Screen { HOME, SCANNING, EXPLORER, TRASH, SETTINGS }
+enum class Screen { HOME, SCANNING, EXPLORER, TRASH }
 
 data class ScanUi(
     val source: SourceItem,
@@ -38,20 +36,19 @@ data class ScanUi(
     val currentPath: String = "",
 )
 
-enum class AppsTab { APPS, CACHE }
+/** What the "Apps" chart and list are sized and sorted by. */
+enum class AppsSort { TOTAL, CACHE }
 
 /** How the explorer shares the screen: chart above list (default), chart enlarged, or list enlarged. */
 enum class Pane { SPLIT, CHART, LIST }
 
-/** Extra state of the "Apps" explorer: the raw figures (single source of truth) and the cache view. */
+/** Extra state of the "Apps" explorer: the raw figures (single source of truth) and the by-cache view. */
 data class AppsExplorer(
     val usages: List<AppUsage>,
     val labels: AppsTreeLabels,
-    /** Apps sized by cache only; the tree shown on the "Cache" tab. */
+    /** Apps sized by cache only; shown when sorting by cache. */
     val cacheRoot: Node,
-    val tab: AppsTab = AppsTab.APPS,
-    /** Apps whose cache the user wants cleared (separate from the uninstall collector). */
-    val cacheCollector: Collector = Collector(),
+    val sort: AppsSort = AppsSort.TOTAL,
 )
 
 data class ExplorerState(
@@ -68,20 +65,6 @@ data class ExplorerState(
     val pane: Pane = Pane.SPLIT,
 )
 
-data class SettingsUi(
-    val removalMode: AppRemovalMode = AppRemovalMode.SYSTEM_DIALOGS,
-    /** False until the user picked a mode: the first-run question is shown. */
-    val removalChosen: Boolean = false,
-    val shizuku: ShizukuStatus = ShizukuStatus.UNKNOWN,
-    /** "Usage access" (needed to read app sizes) is granted. */
-    val usageAccess: Boolean = false,
-    /** One-line description of Shizuku for the diagnostic log (version, uid). */
-    val shizukuInfo: String = "",
-    /** Last lines of the diagnostic log, shown in Settings. */
-    val logTail: String = "",
-    val selfTestRunning: Boolean = false,
-)
-
 data class TrashUi(val source: SourceItem, val entries: List<TrashEntry>)
 
 data class AppState(
@@ -90,10 +73,7 @@ data class AppState(
     val scan: ScanUi? = null,
     val explorer: ExplorerState? = null,
     val trash: TrashUi? = null,
-    val settings: SettingsUi = SettingsUi(),
     val deleting: Boolean = false,
-    /** done / total while a batch operation (Shizuku removal, cache clean-up) runs. */
-    val deletingProgress: Pair<Int, Int>? = null,
     /** Last deletion type picked in this run of the app; offered again next time. Not persisted on purpose. */
     val lastDeleteMode: DeleteMode = DeleteMode.TO_TRASH,
 )
@@ -106,8 +86,4 @@ sealed interface UiMessage {
     data class DeleteFailed(val count: Int, val reason: String?) : UiMessage
     data class RestoreFailed(val reason: String?) : UiMessage
     data class ConnectFailed(val reason: String?) : UiMessage
-    /** Shizuku mode is on but Shizuku is not ready: the system uninstaller was used instead. */
-    data object ShizukuFallback : UiMessage
-    data class CacheCleared(val bytes: Long) : UiMessage
-    data class CacheFailed(val count: Int, val reason: String?) : UiMessage
 }

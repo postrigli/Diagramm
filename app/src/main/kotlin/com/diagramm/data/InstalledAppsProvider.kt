@@ -5,6 +5,7 @@ import android.app.usage.StorageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Process
@@ -80,26 +81,41 @@ class InstalledAppsProvider(private val context: Context) : StorageProvider {
             ensureActive()
             val label = pm.getApplicationLabel(info).toString()
             progress.currentPath = label
-            val s = try {
-                stats.queryStatsForPackage(StorageManager.UUID_DEFAULT, info.packageName, user)
-            } catch (e: Exception) {
-                continue // package vanished meanwhile, or the platform refuses this one
-            }
+            val usage = usageOf(stats, user, info, label) ?: continue
             progress.files.incrementAndGet()
-            progress.bytes.addAndGet(s.appBytes + s.dataBytes)
-            usages.add(
-                AppUsage(
-                    packageName = info.packageName,
-                    label = label,
-                    isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
-                    codeBytes = s.appBytes,
-                    // the platform's data figure includes the cache; show the cache as its own part
-                    dataBytes = (s.dataBytes - s.cacheBytes).coerceAtLeast(0),
-                    cacheBytes = s.cacheBytes,
-                ),
-            )
+            progress.bytes.addAndGet(usage.codeBytes + usage.dataBytes + usage.cacheBytes)
+            usages.add(usage)
         }
         usages
+    }
+
+    /** Fresh figures of one app (after the user cleared its cache or data in system settings); null if it is gone. */
+    @Suppress("DEPRECATION")
+    suspend fun loadUsage(packageName: String): AppUsage? = withContext(Dispatchers.Default) {
+        val pm = context.packageManager
+        val info = try {
+            pm.getApplicationInfo(packageName, 0)
+        } catch (e: PackageManager.NameNotFoundException) {
+            return@withContext null
+        }
+        usageOf(context.getSystemService(StorageStatsManager::class.java), Process.myUserHandle(), info, pm.getApplicationLabel(info).toString())
+    }
+
+    private fun usageOf(stats: StorageStatsManager, user: android.os.UserHandle, info: ApplicationInfo, label: String): AppUsage? {
+        val s = try {
+            stats.queryStatsForPackage(StorageManager.UUID_DEFAULT, info.packageName, user)
+        } catch (e: Exception) {
+            return null // package vanished meanwhile, or the platform refuses this one
+        }
+        return AppUsage(
+            packageName = info.packageName,
+            label = label,
+            isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
+            codeBytes = s.appBytes,
+            // the platform's data figure includes the cache; show the cache as its own part
+            dataBytes = (s.dataBytes - s.cacheBytes).coerceAtLeast(0),
+            cacheBytes = s.cacheBytes,
+        )
     }
 
     override suspend fun delete(nodes: List<Node>, mode: DeleteMode): DeleteResult =
