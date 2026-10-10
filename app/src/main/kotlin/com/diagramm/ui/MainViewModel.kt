@@ -212,7 +212,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
             Screen.EXPLORER -> {
                 val ex = st.explorer
                 val parent = ex?.current?.parent
-                if (ex != null && parent != null) navigateTo(parent) else toHome()
+                when {
+                    ex != null && ex.pane != Pane.SPLIT -> setPane(Pane.SPLIT) // first undo a collapsed chart/list
+                    ex != null && parent != null -> navigateTo(parent)
+                    else -> toHome()
+                }
             }
             Screen.TRASH -> toHome()
             Screen.SETTINGS -> _state.update { it.copy(screen = Screen.HOME) }
@@ -243,6 +247,36 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setCategory(category: FileCategory?) = updateExplorer { it.copy(category = category, focus = null) }
 
+    // ---- layout of the explorer ----------------------------------------------------------------
+
+    fun setPane(pane: Pane) = updateExplorer { if (it.pane == pane) it else it.copy(pane = pane) }
+
+    // ---- multi-selection -----------------------------------------------------------------------
+
+    /**
+     * Drag-selection: the selection is [base] (taken when the long press started) plus or minus the nodes
+     * [range] the finger has swept over, so moving back un-selects again.
+     */
+    fun applyRange(cache: Boolean, base: Collector, range: List<Node>, add: Boolean) {
+        setCollector(cache, range.fold(base) { c, n -> if (add) c.plus(n) else c.minus(n) })
+    }
+
+    /** The "select all" checkbox above the list: (un)select every node of the shown list. */
+    fun setSelection(cache: Boolean, nodes: List<Node>, select: Boolean) {
+        val ex = _state.value.explorer ?: return
+        val base = if (cache) {
+            ex.apps?.cacheCollector ?: return
+        } else {
+            ex.collector
+        }
+        setCollector(cache, nodes.fold(base) { c, n -> if (select) c.plus(n) else c.minus(n) })
+    }
+
+    private fun setCollector(cache: Boolean, collector: Collector) = updateExplorer { ex ->
+        if (cache) ex.apps?.let { a -> ex.copy(apps = a.copy(cacheCollector = collector)) } ?: ex
+        else ex.copy(collector = collector)
+    }
+
     // ---- collector & deletion ------------------------------------------------------------------
 
     fun toggleCollected(node: Node) = updateExplorer { it.copy(collector = it.collector.toggle(node)) }
@@ -253,6 +287,7 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         val ex = _state.value.explorer ?: return
         val items = ex.collector.items
         if (items.isEmpty() || _state.value.deleting) return
+        if (ex.source.type != SourceType.APPS) _state.update { it.copy(lastDeleteMode = mode) }
         if (ex.source.type == SourceType.APPS) {
             val packages = items.mapNotNull { AppsTree.packageOf(it.id) }
             if (_state.value.settings.removalMode == AppRemovalMode.SHIZUKU) {
@@ -303,26 +338,33 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun removeAppsWithShizuku(items: List<Node>, packages: List<String>) {
-        val status = container.shizuku.status()
-        _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
-        if (status != ShizukuStatus.READY) {
-            // not usable right now: fall back to the system dialogs instead of leaving the user stuck
-            _messages.tryEmit(UiMessage.ShizukuFallback)
-            _uninstallRequests.tryEmit(packages)
-            return
-        }
         viewModelScope.launch {
-            _state.update { it.copy(deleting = true) }
+            // Shizuku calls are binder transactions: never on the main thread
+            val status = withContext(Dispatchers.IO) { container.shizuku.status() }
+            _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
+            if (status != ShizukuStatus.READY) {
+                // not usable right now: fall back to the system dialogs instead of leaving the user stuck
+                _messages.tryEmit(UiMessage.ShizukuFallback)
+                _uninstallRequests.tryEmit(packages)
+                return@launch
+            }
+            _state.update { it.copy(deleting = true, deletingProgress = 0 to packages.size) }
             try {
-                val result = container.privilegedRemover.remove(packages)
+                val result = container.privilegedRemover.remove(packages) { done, total ->
+                    _state.update { it.copy(deletingProgress = done to total) }
+                }
                 onAppsRemoved(result.removed)
                 val freed = items.filter { AppsTree.packageOf(it.id) in result.removed }.sumOf { it.size }
                 if (result.removed.isNotEmpty()) _messages.tryEmit(UiMessage.Deleted(freed))
                 if (result.failures.isNotEmpty()) {
                     _messages.tryEmit(UiMessage.DeleteFailed(result.failures.size, result.failures.values.firstOrNull()))
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _messages.tryEmit(UiMessage.DeleteFailed(packages.size, e.message ?: e.javaClass.simpleName))
             } finally {
-                _state.update { it.copy(deleting = false) }
+                _state.update { it.copy(deleting = false, deletingProgress = null) }
             }
         }
     }
@@ -370,15 +412,18 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         val apps = ex.apps ?: return
         val items = apps.cacheCollector.items
         if (items.isEmpty() || _state.value.deleting) return
-        val status = container.shizuku.status()
-        _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
-        if (status != ShizukuStatus.READY) return // the screen shows the setup prompt instead of the button
-
         val packages = items.mapNotNull { AppsTree.packageOf(it.id) }
+
         viewModelScope.launch {
-            _state.update { it.copy(deleting = true) }
+            val status = withContext(Dispatchers.IO) { container.shizuku.status() }
+            _state.update { it.copy(settings = it.settings.copy(shizuku = status)) }
+            if (status != ShizukuStatus.READY) return@launch // the screen shows the setup prompt instead of the button
+
+            _state.update { it.copy(deleting = true, deletingProgress = 0 to packages.size) }
             try {
-                val result = container.privilegedRemover.clearCaches(packages)
+                val result = container.privilegedRemover.clearCaches(packages) { done, total ->
+                    _state.update { it.copy(deletingProgress = done to total) }
+                }
                 val freed = items.filter { AppsTree.packageOf(it.id) in result.removed }.sumOf { it.size }
                 updateExplorer { cur ->
                     val a = cur.apps ?: return@updateExplorer cur
@@ -389,8 +434,13 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 if (result.failures.isNotEmpty()) {
                     _messages.tryEmit(UiMessage.CacheFailed(result.failures.size, result.failures.values.firstOrNull()))
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // whatever went wrong, report it instead of crashing
+                _messages.tryEmit(UiMessage.CacheFailed(packages.size, e.message ?: e.javaClass.simpleName))
             } finally {
-                _state.update { it.copy(deleting = false) }
+                _state.update { it.copy(deleting = false, deletingProgress = null) }
             }
         }
     }
@@ -427,9 +477,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
 
     /** Re-reads what Shizuku can do right now (also called when its binder or our permission changes). */
     fun refreshSetup() {
-        val status = container.shizuku.status()
-        val usage = container.hasUsageAccess()
-        _state.update { it.copy(settings = it.settings.copy(shizuku = status, usageAccess = usage)) }
+        viewModelScope.launch {
+            // binder calls to Shizuku can block; keep them off the main thread
+            val (status, usage) = withContext(Dispatchers.IO) { container.shizuku.status() to container.hasUsageAccess() }
+            _state.update { it.copy(settings = it.settings.copy(shizuku = status, usageAccess = usage)) }
+        }
     }
 
     // ---- local trash ---------------------------------------------------------------------------

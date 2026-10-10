@@ -41,29 +41,47 @@ class AppSettings(context: Context) {
 /**
  * Runs commands as child processes created by [start]. A command that outlives [timeoutMillis] is
  * killed. Both output streams are collected, so `pm`'s messages arrive whichever stream it uses.
+ *
+ * Every pipe of the process is closed explicitly: a Shizuku process holds three file descriptors,
+ * and leaving them to the garbage collector exhausted the app's descriptor limit when hundreds of
+ * processes were started in a row.
  */
 class ProcessCommandRunner(
-    private val timeoutMillis: Long = 90_000,
+    private val timeoutMillis: Long = 120_000,
     private val start: (List<String>) -> Process,
 ) : CommandRunner {
     override suspend fun run(command: List<String>): CommandResult = withContext(Dispatchers.IO) {
-        val process = start(command) // IOException if it cannot be started
+        val process = start(command) // fails if it cannot be started
         try {
+            quietly { process.outputStream.close() } // nothing to send; frees the pipe
             coroutineScope {
-                val out = async { process.inputStream.bufferedReader().readText() }
-                val err = async { process.errorStream.bufferedReader().readText() }
+                val out = async { process.inputStream.bufferedReader().use { it.readText() } }
+                val err = async { process.errorStream.bufferedReader().use { it.readText() } }
                 val text = withTimeoutOrNull(timeoutMillis) { out.await() + err.await() }
                 if (text == null) {
-                    process.destroy() // closing the pipes unblocks the readers
+                    quietly { process.destroy() } // closing the pipes unblocks the readers
                     out.cancel()
                     err.cancel()
                     throw IOException("Timed out waiting for ${command.first()}")
                 }
-                process.waitFor()
-                CommandResult(process.exitValue(), text)
+                quietly { process.waitFor() }
+                val exit = try {
+                    process.exitValue()
+                } catch (e: Exception) {
+                    -1
+                }
+                CommandResult(exit, text)
             }
         } finally {
-            process.destroy()
+            quietly { process.destroy() } // may throw if the remote side is already gone
+        }
+    }
+
+    private inline fun quietly(block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            // cleanup must never turn a finished command into a crash
         }
     }
 }

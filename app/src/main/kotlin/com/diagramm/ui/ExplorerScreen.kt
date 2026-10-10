@@ -2,6 +2,20 @@ package com.diagramm.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.material3.TriStateCheckbox
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -198,50 +212,72 @@ fun ExplorerScreen(
             } else {
                 Modifier
             }
-            val details: @Composable (Modifier) -> Unit = { m ->
-                Column(m.then(swipeToSwitch)) {
-                    if (atAppsRoot && apps != null) {
-                        AppsTabs(apps.tab, ex.root.usedSize, apps.cacheRoot.size, fmt, onSelect = { vm.setAppsTab(it) })
-                    }
-                    InfoStrip(
-                        current = shown,
-                        focus = ex.focus,
-                        collected = ex.focus?.let { shownCollector.covers(it) } ?: false,
-                        isLocal = isLocal,
-                        summary = summary,
-                        fmt = fmt,
-                        appPackage = appPackage,
-                        onToggle = {
-                            ex.focus?.let { if (cacheTab) vm.toggleCache(it) else vm.toggleCollected(it) }
-                        },
-                        onOpen = { ex.focus?.let { openNode(context, it, isLocal) } },
-                        onAppSettings = { appPackage?.let { openAppSettings(context, it) } },
+            // vertical swipe on the strip between chart and list: down enlarges the chart, up enlarges the list
+            val dragPanes = Modifier.pointerInput(ex.pane) {
+                var total = 0f
+                val threshold = 40.dp.toPx()
+                detectVerticalDragGestures(
+                    onDragStart = { total = 0f },
+                    onDragEnd = {
+                        when {
+                            total > threshold -> vm.setPane(if (ex.pane == Pane.LIST) Pane.SPLIT else Pane.CHART)
+                            total < -threshold -> vm.setPane(if (ex.pane == Pane.CHART) Pane.SPLIT else Pane.LIST)
+                        }
+                    },
+                    onVerticalDrag = { _, dy -> total += dy },
+                )
+            }
+            // the strip itself: apps tabs, the "N files . size" line with its actions, cache hint, type chips
+            val middle: @Composable () -> Unit = {
+                if (atAppsRoot && apps != null) {
+                    AppsTabs(apps.tab, ex.root.usedSize, apps.cacheRoot.size, fmt, onSelect = { vm.setAppsTab(it) })
+                }
+                InfoStrip(
+                    current = shown,
+                    focus = ex.focus,
+                    collected = ex.focus?.let { shownCollector.covers(it) } ?: false,
+                    isLocal = isLocal,
+                    summary = summary,
+                    fmt = fmt,
+                    appPackage = appPackage,
+                    onToggle = {
+                        ex.focus?.let { if (cacheTab) vm.toggleCache(it) else vm.toggleCollected(it) }
+                    },
+                    onOpen = { ex.focus?.let { openNode(context, it, isLocal) } },
+                    onAppSettings = { appPackage?.let { openAppSettings(context, it) } },
+                )
+                if (cacheTab && apps != null) {
+                    CacheHeader(
+                        empty = apps.cacheRoot.children.isEmpty(),
+                        shizukuReady = shizukuReady,
+                        onSelectAll = { vm.selectAllCache() },
+                        onSetup = { vm.openSettings() },
                     )
-                    if (cacheTab && apps != null) {
-                        CacheHeader(
-                            empty = apps.cacheRoot.children.isEmpty(),
-                            shizukuReady = shizukuReady,
-                            onSelectAll = { vm.selectAllCache() },
-                            onSetup = { vm.openSettings() },
-                        )
-                    }
-                    if (!isApps) {
-                        CategoryChips(readyData?.totals.orEmpty(), ex.category, fmt, onSelect = { vm.setCategory(it) })
-                    }
-                    AnimatedContent(
-                        targetState = cacheTab,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        transitionSpec = {
-                            val towardsCache = targetState
-                            (slideInHorizontally { if (towardsCache) it / 3 else -it / 3 } + fadeIn()) togetherWith
-                                (slideOutHorizontally { if (towardsCache) -it / 3 else it / 3 } + fadeOut())
-                        },
-                        label = "apps-tab",
-                    ) { cache ->
-                        val tree = if (cache && apps != null) apps.cacheRoot else current
-                        val collector = if (cache && apps != null) apps.cacheCollector else ex.collector
+                }
+                if (!isApps) {
+                    CategoryChips(readyData?.totals.orEmpty(), ex.category, fmt, onSelect = { vm.setCategory(it) })
+                }
+            }
+            val list: @Composable (Modifier) -> Unit = { m ->
+                AnimatedContent(
+                    targetState = cacheTab,
+                    modifier = m.then(swipeToSwitch),
+                    transitionSpec = {
+                        val towardsCache = targetState
+                        (slideInHorizontally { if (towardsCache) it / 3 else -it / 3 } + fadeIn()) togetherWith
+                            (slideOutHorizontally { if (towardsCache) -it / 3 else it / 3 } + fadeOut())
+                    },
+                    label = "apps-tab",
+                ) { cache ->
+                    val tree = if (cache && apps != null) apps.cacheRoot else current
+                    val collector = if (cache && apps != null) apps.cacheCollector else ex.collector
+                    val nodes = if (ex.category == null) tree.children else flat.orEmpty()
+                    Column(Modifier.fillMaxSize()) {
+                        SelectAllHeader(nodes, collector) { select ->
+                            vm.setSelection(cache, nodes.filter { it.isCollectible }, select)
+                        }
                         NodeList(
-                            nodes = if (ex.category == null) tree.children else flat.orEmpty(),
+                            nodes = nodes,
                             parent = tree,
                             colorById = colorById,
                             palette = palette,
@@ -260,7 +296,8 @@ fun ExplorerScreen(
                                 }
                             },
                             onToggle = { if (cache) vm.toggleCache(it) else vm.toggleCollected(it) },
-                            modifier = Modifier.fillMaxSize(),
+                            onRangeSelect = { base, range, add -> vm.applyRange(cache, base, range, add) },
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
                         )
                     }
                 }
@@ -268,12 +305,29 @@ fun ExplorerScreen(
             if (landscape) {
                 Row(Modifier.fillMaxSize()) {
                     chart(Modifier.weight(1f).fillMaxSize())
-                    details(Modifier.weight(1f).fillMaxSize())
+                    Column(Modifier.weight(1f).fillMaxSize()) {
+                        middle()
+                        list(Modifier.weight(1f).fillMaxWidth())
+                    }
                 }
             } else {
+                val chartWeight by animateFloatAsState(
+                    if (ex.pane == Pane.LIST) 0.001f else 1f, tween(300), label = "chart-weight",
+                )
+                val listWeight by animateFloatAsState(
+                    if (ex.pane == Pane.CHART) 0.001f else 1f, tween(300), label = "list-weight",
+                )
                 Column(Modifier.fillMaxSize()) {
-                    chart(Modifier.fillMaxWidth().height(boxHeight * 0.46f))
-                    details(Modifier.weight(1f).fillMaxWidth())
+                    Box(Modifier.weight(chartWeight).fillMaxWidth().clipToBounds()) {
+                        if (chartWeight > 0.05f) chart(Modifier.fillMaxSize())
+                    }
+                    Column(dragPanes.then(swipeToSwitch)) {
+                        PaneHandle()
+                        middle()
+                    }
+                    Box(Modifier.weight(listWeight).fillMaxWidth().clipToBounds()) {
+                        list(Modifier.fillMaxSize())
+                    }
                 }
             }
         }
@@ -427,6 +481,14 @@ private fun CategoryChips(
     }
 }
 
+/** State of one long-press-and-drag selection, kept outside Compose state: it changes on every pointer event. */
+private class DragSelection {
+    var base: Collector? = null
+    var adding = true
+    var startIndex = -1
+    var lastIndex = -1
+}
+
 @Composable
 private fun NodeList(
     nodes: List<Node>,
@@ -439,6 +501,7 @@ private fun NodeList(
     fmt: (Long) -> String,
     onClick: (Node) -> Unit,
     onToggle: (Node) -> Unit,
+    onRangeSelect: (base: Collector, range: List<Node>, add: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (nodes.isEmpty()) {
@@ -447,7 +510,67 @@ private fun NodeList(
         }
         return
     }
-    LazyColumn(modifier) {
+    val listState = rememberLazyListState()
+    val haptic = LocalHapticFeedback.current
+    val currentNodes by rememberUpdatedState(nodes)
+    val currentCollector by rememberUpdatedState(collector)
+    val currentRangeSelect by rememberUpdatedState(onRangeSelect)
+    val selection = remember { DragSelection() }
+
+    /** Index of the list row under [y] (viewport coordinates), or null. */
+    fun rowAt(y: Float): Int? =
+        listState.layoutInfo.visibleItemsInfo.firstOrNull { y >= it.offset && y < it.offset + it.size }?.index
+
+    LazyColumn(
+        state = listState,
+        modifier = modifier.pointerInput(Unit) {
+            val edge = 56.dp.toPx()
+            awaitEachGesture {
+                // Long press starts a selection that follows the finger; nothing is consumed before that, so
+                // taps and normal scrolling keep working.
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+
+                val first = rowAt(down.position.y)
+                val node = first?.let { currentNodes.getOrNull(it) }
+                val c = currentCollector
+                if (first == null || node == null || !node.isCollectible || (c.covers(node) && !c.contains(node))) {
+                    return@awaitEachGesture
+                }
+                selection.base = c
+                selection.adding = !c.contains(node) // starting on a selected row means "un-select by dragging"
+                selection.startIndex = first
+                selection.lastIndex = first
+                currentRangeSelect(c, listOf(node), selection.adding)
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+
+                // From here on the rows must not see the pointer (no click on release): consume on the way down.
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    change.consume()
+                    if (change.changedToUpIgnoreConsumed() || !change.pressed) break
+
+                    val y = change.position.y
+                    val viewportHeight = listState.layoutInfo.let { it.viewportEndOffset - it.viewportStartOffset }
+                    if (y < edge) listState.dispatchRawDelta(-18f) else if (y > viewportHeight - edge) listState.dispatchRawDelta(18f)
+
+                    val row = rowAt(y)
+                    if (row != null && row != selection.lastIndex) {
+                        selection.lastIndex = row
+                        val lo = minOf(selection.startIndex, row)
+                        val hi = maxOf(selection.startIndex, row)
+                        val nodesNow = currentNodes
+                        if (lo in nodesNow.indices && hi in nodesNow.indices) {
+                            // base + (or -) everything between the first row and the finger: moving back undoes it
+                            currentRangeSelect(c, nodesNow.subList(lo, hi + 1), selection.adding)
+                        }
+                    }
+                }
+                selection.base = null
+            }
+        },
+    ) {
         items(nodes, key = { it.id }) { node ->
             val contained = collector.contains(node)
             val covered = contained || (node.isCollectible && collector.covers(node))
@@ -467,6 +590,52 @@ private fun NodeList(
     }
 }
 
+/**
+ * Appears once something is selected: one tri-state checkbox, in the column of the row checkboxes,
+ * that selects (or un-selects) everything in the list below.
+ */
+@Composable
+private fun SelectAllHeader(nodes: List<Node>, collector: Collector, onSelectAll: (Boolean) -> Unit) {
+    val selectable = nodes.filter { it.isCollectible }
+    if (collector.isEmpty || selectable.isEmpty()) return
+    val selected = selectable.count { collector.covers(it) }
+    val state = when (selected) {
+        0 -> ToggleableState.Off
+        selectable.size -> ToggleableState.On
+        else -> ToggleableState.Indeterminate
+    }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.select_all),
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                stringResource(R.string.select_all_count, selected, selectable.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TriStateCheckbox(state = state, onClick = { onSelectAll(state != ToggleableState.On) })
+        }
+    }
+}
+
+/** A small grip on the strip: the strip can be dragged down (bigger chart) or up (bigger list). */
+@Composable
+private fun PaneHandle() {
+    Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(width = 36.dp, height = 4.dp)
+                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.6f), CircleShape),
+        )
+    }
+}
+
 @Composable
 private fun NodeRow(
     node: Node,
@@ -483,6 +652,7 @@ private fun NodeRow(
     Row(
         Modifier
             .fillMaxWidth()
+            .background(if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,

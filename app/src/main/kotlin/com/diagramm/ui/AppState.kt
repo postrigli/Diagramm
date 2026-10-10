@@ -4,6 +4,7 @@ import com.diagramm.data.AppRemovalMode
 import com.diagramm.data.ShizukuStatus
 import com.diagramm.model.Collector
 import com.diagramm.storage.AppsTreeLabels
+import com.diagramm.storage.DeleteMode
 import com.diagramm.storage.AppUsage
 import com.diagramm.model.FileCategory
 import com.diagramm.model.Node
@@ -39,6 +40,9 @@ data class ScanUi(
 
 enum class AppsTab { APPS, CACHE }
 
+/** How the explorer shares the screen: chart above list (default), chart enlarged, or list enlarged. */
+enum class Pane { SPLIT, CHART, LIST }
+
 /** Extra state of the "Apps" explorer: the raw figures (single source of truth) and the cache view. */
 data class AppsExplorer(
     val usages: List<AppUsage>,
@@ -61,6 +65,7 @@ data class ExplorerState(
     /** When set, the list shows the biggest files of this category instead of the folder's children. */
     val category: FileCategory? = null,
     val apps: AppsExplorer? = null,
+    val pane: Pane = Pane.SPLIT,
 )
 
 data class SettingsUi(
@@ -82,6 +87,10 @@ data class AppState(
     val trash: TrashUi? = null,
     val settings: SettingsUi = SettingsUi(),
     val deleting: Boolean = false,
+    /** done / total while a batch operation (Shizuku removal, cache clean-up) runs. */
+    val deletingProgress: Pair<Int, Int>? = null,
+    /** Last deletion type picked in this run of the app; offered again next time. Not persisted on purpose. */
+    val lastDeleteMode: DeleteMode = DeleteMode.TO_TRASH,
 )
 
 /** One-off events for the UI to show (snackbars). Text is resolved in the UI layer, which has resources. */

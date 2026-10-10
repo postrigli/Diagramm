@@ -280,6 +280,7 @@ fun DiagrammApp(
         DeleteDialog(
             collector = explorer.collector,
             local = explorer.source.type == SourceType.LOCAL,
+            initialMode = state.lastDeleteMode,
             fmt = fmt,
             onConfirm = { mode ->
                 showDeleteDialog = false
@@ -289,11 +290,25 @@ fun DiagrammApp(
         )
     }
     if (state.deleting) {
+        val progress = state.deletingProgress
+        val clearingCache = state.explorer?.apps?.tab == AppsTab.CACHE
         AlertDialog(
             onDismissRequest = {},
             confirmButton = {},
-            title = { Text(stringResource(R.string.deleting)) },
-            text = { LinearProgressIndicator(Modifier.fillMaxWidth()) },
+            title = { Text(stringResource(if (clearingCache) R.string.cache_clearing else R.string.deleting)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (progress != null && progress.second > 0) {
+                        Text(stringResource(R.string.deleting_progress, progress.first, progress.second))
+                        LinearProgressIndicator(
+                            progress = { progress.first.toFloat() / progress.second },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                }
+            },
         )
     }
 }
@@ -302,11 +317,13 @@ fun DiagrammApp(
 private fun DeleteDialog(
     collector: Collector,
     local: Boolean,
+    initialMode: DeleteMode,
     fmt: (Long) -> String,
     onConfirm: (DeleteMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var mode by remember { mutableStateOf(DeleteMode.TO_TRASH) }
+    // starts on whatever was chosen last time in this run of the app
+    var mode by remember { mutableStateOf(initialMode) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.delete_title, collector.items.size)) },

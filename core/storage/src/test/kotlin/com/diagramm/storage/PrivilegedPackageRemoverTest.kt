@@ -47,6 +47,13 @@ class PrivilegedPackageRemoverTest {
     }
 
     @Test
+    fun `remove survives exceptions that are not IOExceptions`() = runTest {
+        val runner = FakeRunner { throw RuntimeException("DeadObjectException") }
+        val result = PrivilegedPackageRemover(runner).remove(listOf("com.x.y"))
+        assertEquals("DeadObjectException", result.failures["com.x.y"])
+    }
+
+    @Test
     fun `only plain package names are ever executed`() = runTest {
         val runner = FakeRunner { CommandResult(0, "Success") }
         val evil = listOf("com.a.b; rm -rf /", "x", "com.a.b && reboot", "\$(id).a", "com.a.b\nid", "")
@@ -65,17 +72,75 @@ class PrivilegedPackageRemoverTest {
         assertFalse(PrivilegedPackageRemover.isValidPackageName("com..example"))
     }
 
+    /** Plays the role of the shell: answers the batch script the way pm would. */
+    private fun fakeShell(failing: Set<String> = emptySet(), unknownOption: Set<String> = emptySet()) = FakeRunner { cmd ->
+        val script = cmd.last()
+        val pkgs = Regex("for p in (.*?); do").find(script)!!.groupValues[1].split(' ')
+        CommandResult(
+            0,
+            pkgs.joinToString("\n") { p ->
+                when (p) {
+                    in failing -> "FAIL|$p|Failure [CLEAR_FAILED]"
+                    in unknownOption -> "FAIL|$p|Error: Unknown option --cache-only"
+                    else -> "OK|$p"
+                }
+            },
+        )
+    }
+
     @Test
-    fun `clearCaches runs pm clear --cache-only and never touches data`() = runTest {
-        val runner = FakeRunner { cmd ->
-            if (cmd.last() == "com.bad.app") CommandResult(255, "Error: Unknown option --cache-only") else CommandResult(0, "Success")
-        }
+    fun `clearCaches runs batches through sh and never touches data`() = runTest {
+        val runner = fakeShell(failing = setOf("com.bad.app"))
         val result = PrivilegedPackageRemover(runner).clearCaches(listOf("com.ok.app", "com.bad.app", "bad name; reboot"))
         assertEquals(setOf("com.ok.app"), result.removed)
-        assertEquals(listOf("pm", "clear", "--cache-only", "com.ok.app"), runner.commands[0])
-        assertEquals(2, runner.commands.size) // the invalid name was never executed
-        assertTrue(runner.commands.all { "--cache-only" in it }) // a plain `pm clear` would wipe user data
-        assertEquals("Error: Unknown option --cache-only", result.failures["com.bad.app"])
+        assertEquals("Failure [CLEAR_FAILED]", result.failures["com.bad.app"])
         assertTrue("bad name; reboot" in result.failures)
+        assertEquals(1, runner.commands.size)
+        assertEquals(listOf("sh", "-c"), runner.commands[0].take(2))
+        val script = runner.commands[0].last()
+        assertTrue("pm clear --cache-only" in script)
+        assertFalse(Regex("pm clear (?!--cache-only)").containsMatchIn(script)) // a bare `pm clear` wipes user data
+        assertFalse("reboot" in script) // the invalid name never reached the shell
+    }
+
+    @Test
+    fun `many packages become few processes with steady progress`() = runTest {
+        val packages = (1..40).map { "com.example.app$it" }
+        val runner = fakeShell()
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val result = PrivilegedPackageRemover(runner).clearCaches(packages) { d, t -> progress.add(d to t) }
+        assertEquals(packages.toSet(), result.removed)
+        // 40 apps, 15 per process: 3 processes instead of 40 (each process used to leak file descriptors)
+        assertEquals(3, runner.commands.size)
+        assertEquals(listOf(15 to 40, 30 to 40, 40 to 40), progress)
+    }
+
+    @Test
+    fun `a failing batch is reported per package and does not stop the others`() = runTest {
+        var call = 0
+        val runner = FakeRunner { cmd ->
+            if (call++ == 0) throw IllegalStateException("Shizuku binder is dead") // not an IOException
+            val pkgs = Regex("for p in (.*?); do").find(cmd.last())!!.groupValues[1].split(' ')
+            CommandResult(0, pkgs.joinToString("\n") { "OK|$it" })
+        }
+        val packages = (1..20).map { "com.example.app$it" }
+        val result = PrivilegedPackageRemover(runner).clearCaches(packages)
+        assertEquals(packages.drop(15).toSet(), result.removed)
+        assertEquals(packages.take(15).toSet(), result.failures.keys)
+        assertEquals("Shizuku binder is dead", result.failures["com.example.app1"])
+    }
+
+    @Test
+    fun `packages the shell never mentioned count as failed`() = runTest {
+        val runner = FakeRunner { CommandResult(1, "") }
+        val result = PrivilegedPackageRemover(runner).clearCaches(listOf("com.a.b"))
+        assertTrue(result.removed.isEmpty())
+        assertTrue(result.failures.getValue("com.a.b").contains("access denied"))
+    }
+
+    @Test
+    fun `batch output parsing ignores noise`() {
+        val out = "WARNING: linker noise\nOK|com.a.b\nFAIL|com.c.d|Error: x | y\n\nrandom|line"
+        assertEquals(mapOf("com.a.b" to "", "com.c.d" to "Error: x | y"), PrivilegedPackageRemover.parseBatchOutput(out))
     }
 }
