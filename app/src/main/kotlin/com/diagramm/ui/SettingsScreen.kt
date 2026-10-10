@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -32,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.diagramm.R
@@ -46,6 +48,9 @@ class SetupActions(
     val openUsageAccess: () -> Unit,
     val openAppInfo: () -> Unit,
     val refresh: () -> Unit,
+    val runSelfTest: () -> Unit,
+    val copyLog: () -> Unit,
+    val shareLog: () -> Unit,
 )
 
 @Composable
@@ -78,6 +83,46 @@ fun SettingsScreen(
         )
         if (settings.removalMode == AppRemovalMode.SHIZUKU) {
             SetupGuide(settings, actions)
+        }
+        Diagnostics(settings, actions)
+    }
+}
+
+/** For "it does not work": run a safe self-test, then copy the journal and send it to the developer. */
+@Composable
+private fun Diagnostics(settings: SettingsUi, actions: SetupActions) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
+        Text(
+            stringResource(R.string.diag_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            stringResource(R.string.diag_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(
+                onClick = actions.runSelfTest,
+                enabled = settings.shizuku == ShizukuStatus.READY && !settings.selfTestRunning,
+            ) { Text(stringResource(R.string.diag_test)) }
+            if (settings.selfTestRunning) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = actions.copyLog) { Text(stringResource(R.string.diag_copy)) }
+            TextButton(onClick = actions.shareLog) { Text(stringResource(R.string.diag_share)) }
+        }
+        if (settings.logTail.isNotEmpty()) {
+            Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    settings.logTail,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(10.dp),
+                )
+            }
         }
     }
 }

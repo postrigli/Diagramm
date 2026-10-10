@@ -75,6 +75,11 @@ data class SettingsUi(
     val shizuku: ShizukuStatus = ShizukuStatus.UNKNOWN,
     /** "Usage access" (needed to read app sizes) is granted. */
     val usageAccess: Boolean = false,
+    /** One-line description of Shizuku for the diagnostic log (version, uid). */
+    val shizukuInfo: String = "",
+    /** Last lines of the diagnostic log, shown in Settings. */
+    val logTail: String = "",
+    val selfTestRunning: Boolean = false,
 )
 
 data class TrashUi(val source: SourceItem, val entries: List<TrashEntry>)

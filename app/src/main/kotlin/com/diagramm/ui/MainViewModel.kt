@@ -6,7 +6,10 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import android.os.Build
 import com.diagramm.AppContainer
+import com.diagramm.BuildConfig
+import com.diagramm.data.DiagnosticLog
 import com.diagramm.data.AppRemovalMode
 import com.diagramm.data.ShizukuStatus
 import com.diagramm.DiagrammApp
@@ -38,6 +41,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+
+private const val LOG_TAIL_LINES = 14
 
 class MainViewModel(private val container: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(
@@ -421,9 +426,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
 
             _state.update { it.copy(deleting = true, deletingProgress = 0 to packages.size) }
             try {
+                DiagnosticLog.add("clear cache: ${packages.size} apps, shizuku=$status")
                 val result = container.privilegedRemover.clearCaches(packages) { done, total ->
                     _state.update { it.copy(deletingProgress = done to total) }
                 }
+                DiagnosticLog.add("clear cache result: ok=${result.removed.size}, failed=${result.failures.entries.take(10)}")
                 val freed = items.filter { AppsTree.packageOf(it.id) in result.removed }.sumOf { it.size }
                 updateExplorer { cur ->
                     val a = cur.apps ?: return@updateExplorer cur
@@ -438,9 +445,11 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
                 throw e
             } catch (e: Exception) {
                 // whatever went wrong, report it instead of crashing
+                DiagnosticLog.add("clear cache crashed: $e")
                 _messages.tryEmit(UiMessage.CacheFailed(packages.size, e.message ?: e.javaClass.simpleName))
             } finally {
                 _state.update { it.copy(deleting = false, deletingProgress = null) }
+                refreshLogTail()
             }
         }
     }
@@ -469,6 +478,59 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         _state.update { it.copy(screen = Screen.SETTINGS) }
     }
 
+    /** Everything worth sending when something does not work: device, versions, Shizuku state and the command journal. */
+    fun logText(): String {
+        val st = _state.value.settings
+        return buildString {
+            appendLine("Diagramm ${BuildConfig.VERSION_NAME}")
+            appendLine("Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("Security patch: ${Build.VERSION.SECURITY_PATCH}")
+            appendLine(st.shizukuInfo.ifEmpty { "Shizuku: (not read yet)" })
+            appendLine("Usage access: ${st.usageAccess}; removal mode: ${st.removalMode}")
+            appendLine("--- journal ---")
+            append(DiagnosticLog.snapshot().joinToString("\n"))
+        }
+    }
+
+    /**
+     * Safe check of the commands behind "clear cache": `id` (which user Shizuku runs as), clearing Diagramm's
+     * OWN cache, and a harmless `pm trim-caches 1`. Results land in the journal.
+     */
+    fun runSelfTest() {
+        if (_state.value.settings.selfTestRunning) return
+        _state.update { it.copy(settings = it.settings.copy(selfTestRunning = true)) }
+        viewModelScope.launch {
+            try {
+                DiagnosticLog.add("=== self-test ===")
+                withContext(Dispatchers.IO) {
+                    DiagnosticLog.add(container.shizuku.describe())
+                    val tests = listOf(
+                        listOf("id"),
+                        listOf("pm", "clear", "--cache-only", BuildConfig.APPLICATION_ID),
+                        listOf("pm", "trim-caches", "1"),
+                    )
+                    for (cmd in tests) {
+                        try {
+                            container.shellRunner.run(cmd) // the runner writes the details to the journal
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            // already journaled
+                        }
+                    }
+                }
+                DiagnosticLog.add("=== self-test done ===")
+            } finally {
+                _state.update {
+                    it.copy(settings = it.settings.copy(selfTestRunning = false, logTail = DiagnosticLog.tail(LOG_TAIL_LINES)))
+                }
+            }
+        }
+    }
+
+    private fun refreshLogTail() =
+        _state.update { it.copy(settings = it.settings.copy(logTail = DiagnosticLog.tail(LOG_TAIL_LINES))) }
+
     fun setRemovalMode(mode: AppRemovalMode) {
         container.settings.removalMode = mode
         _state.update { it.copy(settings = it.settings.copy(removalMode = mode, removalChosen = true)) }
@@ -480,7 +542,10 @@ class MainViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch {
             // binder calls to Shizuku can block; keep them off the main thread
             val (status, usage) = withContext(Dispatchers.IO) { container.shizuku.status() to container.hasUsageAccess() }
-            _state.update { it.copy(settings = it.settings.copy(shizuku = status, usageAccess = usage)) }
+            val info = withContext(Dispatchers.IO) { container.shizuku.describe() }
+            _state.update {
+                it.copy(settings = it.settings.copy(shizuku = status, usageAccess = usage, shizukuInfo = info, logTail = DiagnosticLog.tail(LOG_TAIL_LINES)))
+            }
         }
     }
 

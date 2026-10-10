@@ -2,11 +2,14 @@ package com.diagramm.ui
 
 import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -186,6 +189,16 @@ fun DiagrammApp(
                     openUsageAccess = { openUsageAccessSettings(context) },
                     openAppInfo = { openAppSettings(context, context.packageName) },
                     refresh = { vm.refreshSetup() },
+                    runSelfTest = { vm.runSelfTest() },
+                    copyLog = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("Diagramm log", vm.logText()))
+                        Toast.makeText(context, R.string.log_copied, Toast.LENGTH_SHORT).show()
+                    },
+                    shareLog = {
+                        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, vm.logText())
+                        context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    },
                 ),
                 modifier = content,
             )

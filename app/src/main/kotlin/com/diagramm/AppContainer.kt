@@ -31,7 +31,8 @@ class AppContainer(private val context: Context) {
     val settings = AppSettings(context)
     val appsSummary = AppsSummaryStore(context)
     val shizuku = ShizukuAccess(context)
-    val privilegedRemover = PrivilegedPackageRemover(ProcessCommandRunner(start = ShizukuShell::start))
+    val shellRunner = ProcessCommandRunner(start = ShizukuShell::start)
+    val privilegedRemover = PrivilegedPackageRemover(shellRunner)
     val googleAuth = GoogleAuth(context, secureStore)
     val yandexAuth = YandexAuth(secureStore)
 

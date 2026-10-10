@@ -40,6 +40,21 @@ class ShizukuAccess(private val context: Context) {
         ShizukuStatus.NOT_RUNNING
     }
 
+    /** One line for the diagnostic log: status, Shizuku version and the uid it runs commands as (2000 = adb shell, 0 = root). */
+    fun describe(): String {
+        val status = status()
+        val details = try {
+            if (status == ShizukuStatus.READY || status == ShizukuStatus.NEEDS_PERMISSION) {
+                "version=${Shizuku.getVersion()}, uid=${Shizuku.getUid()}"
+            } else {
+                "service not reachable"
+            }
+        } catch (e: Throwable) {
+            "details unavailable (${e.javaClass.simpleName})"
+        }
+        return "Shizuku: status=$status, $details"
+    }
+
     fun requestPermission() {
         try {
             Shizuku.requestPermission(REQUEST_CODE)

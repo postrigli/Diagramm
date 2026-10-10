@@ -3,6 +3,7 @@ package com.diagramm.data
 import android.content.Context
 import com.diagramm.storage.CommandResult
 import com.diagramm.storage.CommandRunner
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -51,10 +52,28 @@ class ProcessCommandRunner(
     private val start: (List<String>) -> Process,
 ) : CommandRunner {
     override suspend fun run(command: List<String>): CommandResult = withContext(Dispatchers.IO) {
+        val started = System.currentTimeMillis()
+        DiagnosticLog.add("RUN " + command.joinToString(" ").take(400))
+        try {
+            val result = runOnce(command)
+            DiagnosticLog.add(
+                "  exit=${result.exitCode} in ${System.currentTimeMillis() - started} ms, output: " +
+                    result.output.trim().ifEmpty { "(empty)" }.take(1500),
+            )
+            result
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            DiagnosticLog.add("  FAILED ${e.javaClass.simpleName}: ${e.message}")
+            throw e
+        }
+    }
+
+    private suspend fun runOnce(command: List<String>): CommandResult {
         val process = start(command) // fails if it cannot be started
         try {
             quietly { process.outputStream.close() } // nothing to send; frees the pipe
-            coroutineScope {
+            return coroutineScope {
                 val out = async { process.inputStream.bufferedReader().use { it.readText() } }
                 val err = async { process.errorStream.bufferedReader().use { it.readText() } }
                 val text = withTimeoutOrNull(timeoutMillis) { out.await() + err.await() }
