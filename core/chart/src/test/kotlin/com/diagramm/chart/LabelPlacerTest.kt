@@ -40,7 +40,36 @@ class LabelPlacerTest {
         assertTrue(p.twoLines)
         assertEquals(45.0, p.angleDegrees)
         assertEquals(g.midRadius(1), p.radius)
-        assertTrue(p.maxWidthPx in 40.0..60.0)
+        assertTrue(p.maxWidthPx >= 60.0) // room for the whole name, so it is not cut
+    }
+
+    @Test
+    fun `a whole name is never cut when the sector has room`() {
+        for (zoom in listOf(1.0, 2.0, 5.0, 12.0)) for (sweep in listOf(10.0, 30.0, 90.0, 200.0)) {
+            val p = place(arc(0.0, sweep), zoom, nameW = 50.0, sizeW = 30.0) ?: continue
+            // either the name fits whole, or no other way of showing it would have fitted it whole
+            if (p.maxWidthPx < 50.0) {
+                val ring = placer.ringLength(g.midRadius(1) * zoom, sweep)
+                val radial = g.ringWidth * zoom - 2 * pad
+                assertTrue(ring * 0.94 < 50.0 && radial * 0.94 < 50.0, "zoom=$zoom sweep=$sweep")
+            }
+        }
+    }
+
+    @Test
+    fun `a tall narrow sector gets text along its length, not a short horizontal one`() {
+        // zoomed in on a sector that is much longer along the radius than wide along the ring
+        val p = place(arc(0.0, 4.0), zoom = 12.0, nameW = 190.0, sizeW = 40.0)
+        assertNotNull(p)
+        assertEquals(LabelOrientation.ALONG_RADIUS, p.orientation)
+        assertTrue(p.maxWidthPx >= 190.0)
+    }
+
+    @Test
+    fun `a wide short sector keeps text along the ring`() {
+        val p = place(arc(0.0, 120.0), zoom = 1.0, nameW = 100.0, sizeW = 40.0)
+        assertNotNull(p)
+        assertEquals(LabelOrientation.ALONG_RING, p.orientation)
     }
 
     @Test
@@ -112,7 +141,7 @@ class LabelPlacerTest {
         val shortened = place(a, zoom = 1.0, nameW = 300.0, sizeW = 30.0)
         assertNotNull(shortened)
         assertTrue(shortened.twoLines)
-        assertTrue(shortened.maxWidthPx < 300.0)
+        assertTrue(shortened.maxWidthPx < 300.0) // cut to the room, not to some smaller guess
         // a size that cannot fit drops the second line instead of overflowing
         val oneLine = place(a, zoom = 1.0, nameW = 300.0, sizeW = 200.0)
         assertNotNull(oneLine)

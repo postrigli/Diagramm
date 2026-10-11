@@ -333,8 +333,8 @@ private fun DrawScope.drawLabels(
 
         val textColor = textColorOn(palette.arc(arc)).copy(alpha = alpha)
         val sizeColor = textColor.copy(alpha = 0.85f * alpha)
-        // Leave a little air on both ends so even the widest glyphs stay clear of the sector's edges.
-        val maxWidth = (placement.maxWidthPx * TEXT_FILL).toFloat()
+        // The placer already keeps a margin to the sector's edges; text is cut only when it exceeds the room.
+        val maxWidth = placement.maxWidthPx.toFloat()
 
         when (placement.orientation) {
             LabelOrientation.ALONG_RADIUS -> {
@@ -478,6 +478,3 @@ private fun FitText(
         overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
     )
 }
-
-/** Share of the exactly-fitting text length that is actually used: a little more aggressive shortening. */
-private const val TEXT_FILL = 0.92
